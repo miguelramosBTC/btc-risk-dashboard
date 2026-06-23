@@ -21,17 +21,17 @@ export default async (req) => {
   const unsubToken = crypto.randomUUID();
 
   const { error } = await supabase
-    .from('subscriptions')
-    .upsert({
-  email: email.toLowerCase().trim(),
-  mode,
-  settings: settings || {},
-  active: true,
-  unsub_token: unsubToken,
-  last_sent: null
-}, { 
-  onConflict: 'email' 
-})
+  .from('subscriptions')
+  .upsert({
+    email: email.toLowerCase().trim(),
+    mode,
+    settings: settings || {},
+    active: true,
+    unsub_token: unsubToken,
+    last_sent: null
+  }, { 
+    onConflict: 'email' 
+  });
 
   if (error) {
     console.error('Supabase error:', error);
