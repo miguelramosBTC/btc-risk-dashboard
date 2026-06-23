@@ -18,7 +18,7 @@ export default async (req) => {
   );
 
   const { error } = await supabase
-    .from('suggestions')
+    .from('Suggestions')
     .insert({
       email: email || null,
       message: message.trim()
