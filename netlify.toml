@@ -1,0 +1,13 @@
+# netlify.toml  — only needed for the Netlify Scheduled Function path.
+#
+# Put the function at:  netlify/functions/btc-risk-weekly.mjs
+# The weekly schedule is declared INSIDE that file via:
+#     export const config = { schedule: "0 7 * * 1" };
+# so this file just points Netlify at the functions folder.
+#
+# Set RESEND_API_KEY, EMAIL_FROM, EMAIL_TO (and optional BTC_DCA_BASE, BTC_STACK)
+# under Site settings -> Environment variables in the Netlify UI.
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
