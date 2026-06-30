@@ -17,13 +17,13 @@
 // dashboard's "live" math — so an email and the site agree to within rounding.
 //
 // Env:
-//   DATA_URL           where data.json lives (default https://bitcoinrisk.net/data.json)
+//   DATA_URL           where data.json lives (default: raw GitHub, updates without a Netlify deploy)
 //   COINGECKO_API_KEY  optional, for the live daily price fill
 // Node 20+ (global fetch). Zero dependencies.
 // NOT FINANCIAL ADVICE.
 // =============================================================================
 
-const DATA_URL = process.env.DATA_URL || "https://bitcoinrisk.net/data.json";
+const DATA_URL = process.env.DATA_URL || "https://raw.githubusercontent.com/miguelramosBTC/btc-risk-dashboard/main/data.json";
 
 /* ===== math (identical to the dashboard) ===== */
 const clip = (x, a, b) => Math.max(a, Math.min(b, x));
@@ -141,3 +141,4 @@ if (process.argv[1] && process.argv[1].endsWith("btc-risk-weekly.mjs")) {
     process.exit(0);
   }).catch((e) => { console.error(e); process.exit(1); });
 }
+
