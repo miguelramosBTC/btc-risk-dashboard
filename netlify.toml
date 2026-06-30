@@ -1,12 +1,22 @@
-# netlify.toml  — only needed for the Netlify Scheduled Function path.
+# netlify.toml — bitcoinrisk.net
 #
-# Put the function at:  netlify/functions/btc-risk-weekly.mjs
-# The weekly schedule is declared INSIDE that file via:
-#     export const config = { schedule: "0 7 * * 1" };
-# so this file just points Netlify at the functions folder.
+# Serves index.html (repo root) as a static site and bundles netlify/functions/:
+#   subscribe.mjs        POST  /.netlify/functions/subscribe     (double opt-in signup)
+#   confirm.mjs          GET   /.netlify/functions/confirm        (activates a subscriber)
+#   unsubscribe.mjs      GET/POST /.netlify/functions/unsubscribe (one-click unsubscribe)
+#   suggest.mjs          POST  /.netlify/functions/suggest        (stores a suggestion)
+#   send-notifications.mjs  (scheduled, daily 08:00 UTC — declared via export const config)
 #
-# Set RESEND_API_KEY, EMAIL_FROM, EMAIL_TO (and optional BTC_DCA_BASE, BTC_STACK)
-# under Site settings -> Environment variables in the Netlify UI.
+# Env (Site settings -> Environment variables):
+#   SUPABASE_URL                 https://xxxx.supabase.co
+#   SUPABASE_SERVICE_ROLE_KEY    the SERVICE ROLE key (server-only; bypasses RLS)
+#   RESEND_API_KEY               re_...   (bitcoinrisk.net Resend account)
+#   EMAIL_FROM                   BitcoinRisk <alerts@bitcoinrisk.net>  (verified domain)
+#   SITE_URL                     https://bitcoinrisk.net
+#   COINGECKO_API_KEY            optional demo key for the live price fill
+
+[build]
+  publish = "."
 
 [functions]
   directory = "netlify/functions"
