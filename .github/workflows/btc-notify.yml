@@ -1,0 +1,38 @@
+# .github/workflows/btc-notify.yml
+# Sends the per-user notifications once a day, on GitHub's runners. This replaces the old
+# Netlify scheduled function — Cloudflare Pages doesn't do cron, and this doesn't need a web
+# host anyway: it's just a Node script that reads Supabase and sends via Resend.
+#
+# Runs at 08:00 UTC, two hours after the data refresh (btc-data.yml at 06:00), so the risk
+# number it reads is already fresh.
+#
+# SETUP (one time): repo -> Settings -> Secrets and variables -> Actions, add these secrets:
+#   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, RESEND_API_KEY, EMAIL_FROM
+#   (optional) COINGECKO_API_KEY
+# SITE_URL is set inline below.
+
+name: Send notifications (daily)
+
+on:
+  schedule:
+    - cron: "0 8 * * *"
+  workflow_dispatch: {}          # lets you trigger a send by hand to test
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"     # has global fetch; no npm install needed (zero dependencies)
+      - name: Send due notifications
+        env:
+          SUPABASE_URL:              ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          RESEND_API_KEY:            ${{ secrets.RESEND_API_KEY }}
+          EMAIL_FROM:                ${{ secrets.EMAIL_FROM }}
+          SITE_URL:                  https://bitcoinrisk.net
+          DATA_FILE:                 ${{ github.workspace }}/data.json   # read the risk data from the checkout
+          COINGECKO_API_KEY:         ${{ secrets.COINGECKO_API_KEY }}
+        run: node send-notifications.mjs
