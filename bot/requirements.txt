@@ -1,0 +1,4 @@
+# repo path: bot/requirements.txt
+# Kept deliberately tiny (same philosophy as lib/supabase.js: no heavy SDKs).
+requests>=2.31
+tweepy>=4.14          # X API v2 create_tweet via OAuth 1.0a user context
