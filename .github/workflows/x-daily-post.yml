@@ -1,0 +1,76 @@
+# repo path: .github/workflows/x-daily-post.yml
+# Daily: post the risk reading to X, 75 min after the 06:00 UTC data refresh
+# commits fresh data.json — so the checkout below always contains today's
+# canonical numbers and the tweet can never disagree with the dashboard.
+#
+# Cost note (X pay-per-use, 2026): $0.015 per plain post => ~$0.45/month.
+# The script never includes a URL (those bill at $0.20/post) — promotion is
+# via the account bio. This workflow commits nothing, so it does NOT consume
+# Cloudflare Pages builds and never touches the data pipeline.
+#
+# Modes:
+#   * Repo variable BOT_DRY_RUN — "true" (review period: tweet only printed to
+#     the run log + job summary) / "false" (live). UNSET behaves as "true", so
+#     nothing is ever posted by accident.
+#   * Manual runs (workflow_dispatch) can override with the dry_run input.
+#
+# Secrets required to go live: X_API_KEY, X_API_SECRET, X_ACCESS_TOKEN,
+# X_ACCESS_TOKEN_SECRET, LLM_API_KEY (see bot/README.md).
+
+name: Daily X post (risk bot)
+
+on:
+  schedule:
+    - cron: "15 7 * * *"         # 07:15 UTC — data job (06:00) has finished
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (print the tweet, do not post)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read                 # the bot only READS data.json; no commits
+
+concurrency:
+  group: x-daily-post
+  cancel-in-progress: false
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install bot deps
+        run: pip install -r bot/requirements.txt
+
+      - name: Compose and post daily risk tweet
+        env:
+          X_API_KEY:             ${{ secrets.X_API_KEY }}
+          X_API_SECRET:          ${{ secrets.X_API_SECRET }}
+          X_ACCESS_TOKEN:        ${{ secrets.X_ACCESS_TOKEN }}
+          X_ACCESS_TOKEN_SECRET: ${{ secrets.X_ACCESS_TOKEN_SECRET }}
+          LLM_API_KEY:           ${{ secrets.LLM_API_KEY }}
+          LLM_BASE_URL:          ${{ vars.LLM_BASE_URL }}      # optional override
+          LLM_MODEL:             ${{ vars.LLM_MODEL }}         # optional override
+          LLM_TEMPERATURE:       ${{ vars.LLM_TEMPERATURE }}   # optional override
+          EVENT_NAME:            ${{ github.event_name }}
+          INPUT_DRY_RUN:         ${{ inputs.dry_run }}
+          VAR_DRY_RUN:           ${{ vars.BOT_DRY_RUN }}
+        run: |
+          # Resolve dry-run: manual input wins on dispatch; otherwise the repo
+          # variable; otherwise SAFE DEFAULT = dry-run.
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ -n "$INPUT_DRY_RUN" ]; then
+            export BOT_DRY_RUN="$INPUT_DRY_RUN"
+          elif [ -n "$VAR_DRY_RUN" ]; then
+            export BOT_DRY_RUN="$VAR_DRY_RUN"
+          else
+            export BOT_DRY_RUN="true"
+          fi
+          echo "BOT_DRY_RUN=$BOT_DRY_RUN"
+          python3 bot/post_risk_update.py
