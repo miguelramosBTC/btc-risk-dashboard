@@ -1,0 +1,22 @@
+# bot/requirements.txt
+# Frozen to the exact dependency set from the known-good run on 2026-07-11
+# (GitHub Actions, Python 3.12). Pinning the FULL closure — not just the direct
+# deps — because oauthlib (the OAuth 1.0a signer) is a transitive dep of tweepy;
+# leaving it unpinned is what could silently reintroduce an auth regression.
+#
+# To upgrade intentionally later: bump a version here, run the workflow, and if
+# it posts cleanly, keep it. If adding a new package ever causes a resolver
+# conflict, loosen the offending transitive pin (or regenerate this list).
+
+# --- direct dependencies ---
+requests==2.34.2
+tweepy==4.17.0
+requests-oauthlib==2.0.0
+Pillow==12.3.0
+
+# --- transitive (pulled in by the above; pinned for reproducibility) ---
+certifi==2026.6.17
+charset-normalizer==3.4.9
+idna==3.18
+oauthlib==3.3.1
+urllib3==2.7.0
