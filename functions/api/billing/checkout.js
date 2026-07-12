@@ -3,7 +3,7 @@
 // Creates a Stripe Checkout session and returns { url } for the browser to
 // redirect to. One endpoint, two modes (the frontend buttons pick the type):
 //
-//   { "type": "donation",     "amount_cents": 500, "method": "card" }   one-time
+//   { "type": "donation",     "amount_cents": 500, "method": "card" }   one-time, EUR cents
 //        method (optional): "card" | "applepay" | "googlepay" | "paypal".
 //        Wallets ride on the card payment method; the hosted page shows the
 //        Apple/Google Pay button automatically where the device supports it.
@@ -25,9 +25,9 @@
 import { sb } from "../../../lib/supabase.js";
 import { stripeCall } from "../../../lib/stripe.js";
 
-const MIN_CENTS = 100;      // $1
-const MAX_CENTS = 50000;    // $500
-const DEFAULT_CENTS = 500;  // $5
+const MIN_CENTS = 100;      // 1 EUR
+const MAX_CENTS = 50000;    // 500 EUR
+const DEFAULT_CENTS = 500;  // 5 EUR
 const SESSIONS_PER_IP_DAY = 20;
 
 const CORS = {
@@ -106,7 +106,7 @@ export async function onRequestPost(context) {
         line_items: [{
           quantity: 1,
           price_data: {
-            currency: "usd",
+            currency: "eur",
             unit_amount: cents,
             product_data: { name: "Bitcoin Risk — donation" },
           },
