@@ -735,10 +735,10 @@ footer .wrap{display:flex; flex-wrap:wrap; gap:14px; justify-content:space-betwe
       <button class="chip exp-json" data-i18n="exp_json">Exportar histórico completo + componentes (JSON)</button>
       <button class="chip" id="apiChip" data-i18n="api_chip">Acceso API</button>
     </div>
-    <p class="note" data-i18n="exp_note">API — Gratis: últimos 90 días · Pro (0,99 $/mes): histórico completo + todos los componentes</p>
+    <p class="note" data-i18n="exp_note">API — Gratis: últimos 90 días · Pro (0,99 €/mes o 9,99 €/año): histórico completo + todos los componentes</p>
     <div class="panel" id="apiPanel" style="display:none;margin-top:12px;padding:16px 18px">
       <div class="sec-eye" data-i18n="api_h">API pública del índice de riesgo</div>
-      <p class="note" data-i18n="api_p" style="margin-top:6px">Gratis: 50 peticiones/día, últimos 90 días de histórico. Pro (0,99 $/mes): histórico completo desde 2011, 5.000 peticiones/día y componentes según se publiquen. La clave llega por correo y solo se muestra una vez.</p>
+      <p class="note" data-i18n="api_p" style="margin-top:6px">Gratis: 50 peticiones/día, últimos 90 días de histórico. Pro (0,99 €/mes o 9,99 €/año): histórico completo desde 2011, 5.000 peticiones/día y componentes según se publiquen. La clave llega por correo y solo se muestra una vez.</p>
       <div class="suggest-row" style="margin-top:10px">
         <label class="suggest-field" style="flex:1;min-width:220px">
           <span class="suggest-lbl" data-i18n="api_email_lbl">Tu correo (la clave llega por email)</span>
@@ -1116,7 +1116,7 @@ footer .wrap{display:flex; flex-wrap:wrap; gap:14px; justify-content:space-betwe
     <div class="pm-head"><span class="pm-title" data-i18n="pro_h">Pro — API e histórico completo</span></div>
     <div class="pm-sub" data-i18n="pro_p">Histórico completo desde 2011, 5.000 peticiones/día y componentes según se publiquen. La clave llega por correo. Cancela cuando quieras.</div>
     <div class="pm-plans">
-      <button class="pm-cta" id="planMonthly" data-i18n="pro_m">0,99 $ / mes</button>
+      <button class="pm-cta" id="planMonthly" data-i18n="pro_m">0,99 € / mes</button>
       <button class="pm-cta" id="planYearly" data-i18n="pro_y" style="background:#1f6f43">9,99 € / año</button>
     </div>
     <div class="pm-note" style="margin-top:10px" data-i18n="pay_note">Apple Pay disponible en Safari y dispositivos compatibles · pago seguro con tarjeta o Apple Pay vía Stripe</div>
@@ -1209,9 +1209,9 @@ const I18N = {
   bt_invested:"Invertido", bt_value:"Valor final",
   bt_note:"Ambas estrategias invierten el mismo total; el DCA dinámico solo concentra las compras en semanas de bajo riesgo. Importante: los umbrales del modelo se calibraron sobre todo el histórico, así que el resultado a futuro será más moderado que el backtest. Ignora impuestos y comisiones. No es asesoramiento financiero.",
   exp_csv:"Exportar datos del gráfico (CSV)", exp_json:"Exportar histórico completo + componentes (JSON)",
-  exp_note:"API — Gratis: últimos 90 días · Pro (0,99 $/mes o 9,99 €/año): histórico completo + todos los componentes",
+  exp_note:"API — Gratis: últimos 90 días · Pro (0,99 €/mes o 9,99 €/año): histórico completo + todos los componentes",
   api_chip:"Acceso API", api_h:"API pública del índice de riesgo",
-  api_p:"Gratis: 50 peticiones/día, últimos 90 días de histórico. Pro (0,99 $/mes o 9,99 €/año): histórico completo desde 2011, 5.000 peticiones/día y componentes según se publiquen. La clave llega por correo y solo se muestra una vez.",
+  api_p:"Gratis: 50 peticiones/día, últimos 90 días de histórico. Pro (0,99 €/mes o 9,99 €/año): histórico completo desde 2011, 5.000 peticiones/día y componentes según se publiquen. La clave llega por correo y solo se muestra una vez.",
   api_email_lbl:"Tu correo (la clave llega por email)", api_get:"Recibir clave gratis",
   api_sent:"Clave enviada — revisa tu correo (y el spam).",
   api_err_email:"Introduce un correo válido.", api_err_many:"Ese correo ya tiene 3 claves activas.",
@@ -1230,7 +1230,7 @@ const I18N = {
   md_fx_fail:"Conversión EUR→BTC no disponible ahora — introduce el importe en BTC o escanea solo la dirección.",
   pro_h:"Pro — API e histórico completo",
   pro_p:"Histórico completo desde 2011, 5.000 peticiones/día y componentes según se publiquen. La clave llega por correo. Cancela cuando quieras.",
-  pro_m:"0,99 $ / mes", pro_y:"9,99 € / año",
+  pro_m:"0,99 € / mes", pro_y:"9,99 € / año",
   pay_note:"Apple Pay disponible en Safari y dispositivos compatibles · pago seguro con tarjeta o Apple Pay vía Stripe",
   pay_err:"No se pudo abrir el pago. Inténtalo de nuevo.",
   pro_welcome:"¡Bienvenido a Pro! Tu clave (o la mejora de tus claves) llega por correo en unos minutos.",
@@ -1435,9 +1435,9 @@ const I18N = {
   bt_invested:"Invested", bt_value:"Final value",
   bt_note:"Both strategies invest the same total; dynamic DCA just concentrates buys in low-risk weeks. Important: the model's thresholds were calibrated over the full history, so live-forward results will be more muted than the backtest. Ignores taxes and fees. Not financial advice.",
   exp_csv:"Export chart data (CSV)", exp_json:"Export full history + components (JSON)",
-  exp_note:"API — Free: last 90 days · Pro ($0.99/mo or €9.99/yr): full history + all components",
+  exp_note:"API — Free: last 90 days · Pro (€0.99/mo or €9.99/yr): full history + all components",
   api_chip:"API access", api_h:"Public risk-index API",
-  api_p:"Free: 50 requests/day, last 90 days of history. Pro ($0.99/mo or €9.99/yr): full history since 2011, 5,000 requests/day and components as they are published. Your key arrives by email and is shown only once.",
+  api_p:"Free: 50 requests/day, last 90 days of history. Pro (€0.99/mo or €9.99/yr): full history since 2011, 5,000 requests/day and components as they are published. Your key arrives by email and is shown only once.",
   api_email_lbl:"Your email (the key is delivered by email)", api_get:"Get free key",
   api_sent:"Key sent — check your inbox (and spam).",
   api_err_email:"Enter a valid email.", api_err_many:"That email already has 3 active keys.",
@@ -1456,7 +1456,7 @@ const I18N = {
   md_fx_fail:"EUR→BTC conversion unavailable right now — enter the amount in BTC or scan the address only.",
   pro_h:"Pro — API & full history",
   pro_p:"Full history since 2011, 5,000 requests/day and components as they are published. Your key arrives by email. Cancel anytime.",
-  pro_m:"$0.99 / month", pro_y:"€9.99 / year",
+  pro_m:"€0.99 / month", pro_y:"€9.99 / year",
   pay_note:"Apple Pay available on Safari and supported devices · secure card or Apple Pay checkout via Stripe",
   pay_err:"Could not open checkout. Please try again.",
   pro_welcome:"Welcome to Pro! Your key (or your key upgrade) arrives by email within minutes.",
