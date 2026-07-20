@@ -77,6 +77,34 @@ check("politicians 'buy votes' is fine",
       bot.long_text_ok(good + " Politicians buy votes with printed money.", 40) == "")
 check("too-short flagged", "too short" in bot.long_text_ok("word " * 60, 250))
 
+# ---- 4b. discovery tags -------------------------------------------------------
+print("[4b] compose_tags")
+import datetime as _dt
+_d = _dt.date(2026, 7, 10)
+os.environ.pop("HEADER_TAGS", None); os.environ.pop("DYNAMIC_TAGS", None)
+os.environ.pop("MAX_TAGS", None)
+check("off + no manual → empty", bot.compose_tags("story about the Fed", _d) == "")
+os.environ["DYNAMIC_TAGS"] = "on"
+t = bot.compose_tags("Powell and the Fed held interest rates steady again", _d)
+check("dynamic: $BTC + topical", t == "$BTC #Fed", t)
+t = bot.compose_tags("EU ministers advanced sweeping regulation of wallets", _d)
+check("dynamic: regulation match", t == "$BTC #Regulation", t)
+t1 = bot.compose_tags("", _d)
+t2 = bot.compose_tags("", _d + _dt.timedelta(days=1))
+check("no topic → generic rotates daily", t1 != t2 and t1.startswith("$BTC #"),
+      f"{t1} / {t2}")
+check("cap default = 2 tags", len(bot.compose_tags("fed etf mining story", _d).split()) == 2)
+os.environ["HEADER_TAGS"] = "$BTC"
+check("manual $BTC dedupes with dynamic",
+      bot.compose_tags("the Fed again", _d) == "$BTC #Fed",
+      bot.compose_tags("the Fed again", _d))
+os.environ["MAX_TAGS"] = "5"
+check("MAX_TAGS hard-clamped ≤3",
+      len(bot.compose_tags("fed inflation etf halving", _d).split()) <= 3)
+os.environ.pop("HEADER_TAGS"); os.environ.pop("DYNAMIC_TAGS"); os.environ.pop("MAX_TAGS")
+hdr_tagged = bot.header_lines(0.28, "2026-07-08", "x", "$BTC #Fed")[0]
+check("tags land on header line 1", hdr_tagged.endswith("$BTC #Fed"), hdr_tagged)
+
 # ---- 5. assembly (long + short fallback) --------------------------------------
 print("[5] assembly")
 body = "Hook line.\n\nParagraph one about the thing.\n\nCloser."
@@ -114,6 +142,51 @@ with tempfile.TemporaryDirectory() as td:
     edge = all(near(px[x, y], (11, 17, 26), 30)
                for x in range(1188, 1200, 3) for y in range(300, 560, 8))
     check("no right-edge overflow", edge)
+
+# ---- 6c. gauge extreme treatment + brand relocation --------------------------
+print("[6c] gauge extreme + brand relocation")
+from PIL import Image as _Img
+def _near(a, b, t=45): return all(abs(x - y) <= t for x, y in zip(a, b))
+def _isbg(c, t=20):
+    return (all(abs(a - b) <= t for a, b in zip(c, (11, 17, 26)))
+            or all(abs(a - b) <= t for a, b in zip(c, (16, 23, 34))))
+check("date formatter → 'Jul 7'", rg._fmt_date("2026-07-07") == "Jul 7",
+      rg._fmt_date("2026-07-07"))
+GOLD = (232, 200, 74)
+with tempfile.TemporaryDirectory() as td:
+    pe, pn = os.path.join(td, "e.png"), os.path.join(td, "n.png")
+    rg.render(0.08, "LOW", "Lowest reading in 300 days", "2026-07-07", pe)
+    rg.render(0.62, "ELEVATED", "Higher than 74% of the last 365 days",
+              "2026-07-07", pn)
+    ie = _Img.open(pe).convert("RGB").load()
+    ino = _Img.open(pn).convert("RGB").load()
+    check("brand top-left (extreme card)",
+          sum(_near(ie[x, y], GOLD, 70) for x in range(34, 440, 6)
+              for y in range(30, 80, 4)) >= 8)
+    check("brand top-left (normal card)",
+          sum(_near(ino[x, y], GOLD, 70) for x in range(34, 440, 6)
+              for y in range(30, 80, 4)) >= 8)
+    check("brand no longer bottom-right",
+          sum(_near(ino[x, y], GOLD, 70) for x in range(980, 1170, 6)
+              for y in range(600, 650, 4)) <= 2)
+    lc = rg.risk_color(0.08)
+    check("extreme edge glow in level color",
+          sum(1 for x in range(2, 28, 2)
+              if ie[x, 338][2] > 55 and ie[x, 338][2] > ie[x, 338][0] + 12) >= 5)
+    check("extreme badge pill top-right",
+          sum(_near(ie[x, y], lc, 55) for x in range(1050, 1180, 4)
+              for y in range(30, 80, 4)) >= 15)
+    check("normal card: no edge glow", _isbg(ino[5, 338]), str(ino[5, 338]))
+    check("normal card: no badge",
+          sum(_near(ino[x, y], rg.risk_color(0.62), 45)
+              for x in range(1050, 1180, 5) for y in range(30, 80, 5)) <= 3)
+with tempfile.TemporaryDirectory() as td:                # kill-switch works
+    os.environ["EXTREME_STYLE"] = "off"
+    po = os.path.join(td, "o.png")
+    rg.render(0.08, "LOW", "Lowest reading in 300 days", "2026-07-07", po)
+    check("EXTREME_STYLE=off disables glow",
+          _isbg(_Img.open(po).convert("RGB").load()[5, 338]))
+    del os.environ["EXTREME_STYLE"]
 
 # ---- 6b. thread splitter ------------------------------------------------------
 print("[6b] build_thread_tweets")

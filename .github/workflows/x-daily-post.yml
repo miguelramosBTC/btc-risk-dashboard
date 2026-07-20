@@ -67,6 +67,8 @@ jobs:
           TWEET_MODE:            ${{ vars.TWEET_MODE }}
           ATTACH_GAUGE:          ${{ vars.ATTACH_GAUGE }}
           HEADER_TAGS:           ${{ vars.HEADER_TAGS }}
+          DYNAMIC_TAGS:          ${{ vars.DYNAMIC_TAGS }}
+          MAX_TAGS:              ${{ vars.MAX_TAGS }}
           EXTREME_STYLE:         ${{ vars.EXTREME_STYLE }}
           LONG_MIN_WORDS:        ${{ vars.LONG_MIN_WORDS }}
           LONG_MAX_WORDS:        ${{ vars.LONG_MAX_WORDS }}
