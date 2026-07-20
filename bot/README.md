@@ -76,6 +76,30 @@ degrades to a single short post as always.
 **Thread mode still requires a funded LLM key** (below) — the news comes from
 the model, not from templates.
 
+## Visibility tweaks (v2.1)
+
+- **Post time:** the daily cron is **14:00 UTC** (US morning + Europe afternoon),
+  the higher-engagement window. Change the `cron:` line in the workflow to move it.
+- **Discovery tags:** set `DYNAMIC_TAGS=on` to auto-append tags to the header
+  line: `$BTC` plus ONE tag matched to the day's story (#Fed, #ETF, #Regulation,
+  #Halving, …), rotating through #Bitcoin/#BTC/#Crypto on no-news days so the
+  set is never identical two days running. `HEADER_TAGS` still pins manual tags
+  (merged first, deduped). **Cap is 2 by default and hard-clamped at 3** — on
+  the 2026 algorithm, 1–2 relevant tags give a small boost while 3+ trips the
+  spam classifier and measurably cuts reach, and identical daily sets are also
+  flagged; the clamp exists to protect the account. No URLs here — the URL
+  guard aborts the run ($0.20 link-post tier).
+- **Extreme-day cards:** when the reading is LOW (<0.30) or HIGH (≥0.80) the gauge
+  gets a colored edge glow in the level color plus a neutral **EXTREME** badge,
+  so milestone days stand out when people share the image. Toggle with
+  `EXTREME_STYLE=off`; thresholds are `EXTREME_LOW`/`EXTREME_HIGH` in
+  `render_gauge.py`. (Wording is deliberately neutral — no buy/sell implication.)
+- **Gauge date/link:** the card's "as of" date is the DATA date (`model.lastDate`,
+  matching the dashboard), now formatted like the tweet ("Jul 7") — a 1–2 day
+  Coin Metrics lag is normal, so it will usually trail today's date. The
+  `bitcoinrisk.net` wordmark moved to the **top-left** in a larger Helvetica-metric
+  font (Liberation Sans), clearing the previous overlap with the stat line.
+
 ## Setup — your steps (~20 min on top of v1)
 
 ### 1 · Posting format
@@ -122,6 +146,10 @@ the first one.
 BOT_DRY_RUN       (true)     flip to false to go live
 TWEET_MODE        (long)     thread | long | short
 ATTACH_GAUGE      (true)     attach the daily gauge card (all modes)
+HEADER_TAGS       (empty)    manual tags, merged first, e.g. "$BTC"
+DYNAMIC_TAGS      (off)      on → auto: $BTC + one story-matched/rotated tag
+MAX_TAGS          (2)        total tag cap; hard-clamped at 3 (spam threshold)
+EXTREME_STYLE     (on)       gauge glow + "EXTREME" badge when reading is LOW/HIGH
 GROK_SEARCH       (on)       on | x_only | web_only | off   [api.x.ai only]
 LLM_BASE_URL      (https://api.x.ai/v1)
 LLM_MODEL         (grok-4.3)  pin a dated snapshot for absolute consistency;

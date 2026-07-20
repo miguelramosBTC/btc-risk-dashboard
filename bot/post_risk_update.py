@@ -38,7 +38,9 @@ Environment (variables, all optional):
   GROK_SEARCH      on|x_only|web_only|off        (default on; only used on api.x.ai)
   TWEET_MODE       long|short                    (default long)
   ATTACH_GAUGE     true|false                    (default true)
-  HEADER_TAGS      e.g. "$BTC #Bitcoin"          (default empty; appended to header line 1)
+  HEADER_TAGS      manual tags, e.g. "$BTC"      (default empty; merged first)
+  DYNAMIC_TAGS     on|off (default off)          auto tags: $BTC + one topic-matched/rotated
+  MAX_TAGS         default 2 (hard clamp 3 — 3+ trips X's 2026 spam classifier)
   EXTREME_STYLE    on|off                        (default on; gauge glow+badge at LOW/HIGH)
   LONG_MIN_WORDS / LONG_MAX_WORDS                (default 250 / 750)
   MAX_LONG_CHARS   default 6000  (X Premium long posts allow 25k)
@@ -448,9 +450,61 @@ def fmt_day(date_str: str) -> str:
     return d.strftime("%b %d").replace(" 0", " ")
 
 
-def header_lines(risk, ddate, hist):
+# --------------------------------------------------------------------------- #
+#  DISCOVERY TAGS — evidence-based (2026 X algorithm): 1-2 relevant tags help
+#  slightly; 3+ trips the spam classifier and cuts reach (~17%); identical
+#  daily sets also read as spam. So: cap 2 by default (hard clamp 3), topic-
+#  matched to the day's story, rotating generic fallback. DYNAMIC_TAGS=on
+#  enables; HEADER_TAGS still works for manual pinning and merges first.
+# --------------------------------------------------------------------------- #
+TAG_MAP = [
+    (r"\bhalving\b", "#Halving"),
+    (r"\bcbdc\b|digital (?:euro|dollar|yuan)", "#CBDC"),
+    (r"\betfs?\b|blackrock|fidelity", "#ETF"),
+    (r"\bminer|mining|hashrate|hashprice", "#Mining"),
+    (r"\bstablecoin|tether|usdc\b", "#Stablecoins"),
+    (r"\bfed\b|fomc|powell|interest rates?|rate (?:cut|hike)", "#Fed"),
+    (r"\binflation|\bcpi\b|money print|debase", "#Inflation"),
+    (r"\bregulat|\bsec\b|\bmica\b|lawmaker|congress|senat|minister|\bban(?:ned|s)?\b", "#Regulation"),
+    (r"\belection|president|parliament|white house|campaign", "#Politics"),
+    (r"\bdebt\b|deficit|treasur|tariff|\bgdp\b|\bmacro\b", "#Macro"),
+]
+GENERIC_ROTATION = ["#Bitcoin", "#BTC", "#Crypto"]
+
+
+def compose_tags(context_text: str, today: dt.date) -> str:
+    """Final tag string for the header ('' when nothing applies)."""
+    manual = [t for t in re.sub(r"\s+", " ", env("HEADER_TAGS", "")).split(" ") if t]
+    tags = list(manual)
+    if env("DYNAMIC_TAGS", "off").lower() == "on":
+        if "$BTC" not in {t.upper() for t in tags}:
+            tags.append("$BTC")
+        topical = ""
+        low = (context_text or "").lower()
+        for pat, tag in TAG_MAP:
+            if low and re.search(pat, low):
+                topical = tag
+                break
+        tags.append(topical or GENERIC_ROTATION[today.toordinal() % len(GENERIC_ROTATION)])
+    seen, out = set(), []
+    for t in tags:
+        k = t.casefold()
+        if k not in seen:
+            seen.add(k)
+            out.append(t)
+    try:
+        cap = int(env("MAX_TAGS", "2"))
+    except ValueError:
+        cap = 2
+    cap = max(1, min(cap, 3))
+    if cap >= 3 and len(out) >= 3:
+        print("[tags] WARNING: 3 tags is the documented spam-filter threshold "
+              "on X (2026) — 2 is the recommended maximum")
+    return " ".join(out[:cap])
+
+
+def header_lines(risk, ddate, hist, tags=""):
     l1 = f"{level_emoji(risk)} BTC Risk {risk:.2f} — {level_word(risk)}"
-    tags = re.sub(r"\s+", " ", env("HEADER_TAGS", "")).strip()   # e.g. "$BTC #Bitcoin"
     if tags:
         l1 = f"{l1} {tags}"
     return (l1, f"📊 {hist} · as of {fmt_day(ddate)}")
@@ -459,8 +513,8 @@ def header_lines(risk, ddate, hist):
 FOOTER = "not financial advice · full model → link in bio"
 
 
-def build_short(risk, ddate, hist, today) -> str:
-    l1, l2 = header_lines(risk, ddate, hist)
+def build_short(risk, ddate, hist, today, tags="") -> str:
+    l1, l2 = header_lines(risk, ddate, hist, tags)
     humor = FALLBACK_HUMOR[today.timetuple().tm_yday % len(FALLBACK_HUMOR)]
     for parts in ((l1, l2, humor, FOOTER), (l1, l2, FOOTER), (l1, FOOTER), (l1,)):
         t = "\n".join(parts)
@@ -469,8 +523,8 @@ def build_short(risk, ddate, hist, today) -> str:
     return l1
 
 
-def build_long(risk, ddate, hist, body) -> str:
-    l1, l2 = header_lines(risk, ddate, hist)
+def build_long(risk, ddate, hist, body, tags="") -> str:
+    l1, l2 = header_lines(risk, ddate, hist, tags)
     return f"{l1}\n{l2}\n\n{body}\n\n{FOOTER}"
 
 
@@ -781,8 +835,6 @@ def main() -> int:
     # ---- generate body + assemble ------------------------------------------
     # fmt: text (single post) OR thread (list of posts). Exactly one is set.
     text, thread, used_llm, fmt = "", None, False, "short"
-    l1, l2 = header_lines(risk, ddate, hist)
-    header = f"{l1}\n{l2}"
 
     if mode == "thread":
         min_w = int(env("LONG_MIN_WORDS", "150"))
@@ -794,7 +846,9 @@ def main() -> int:
                          body, re.I):
                 print("[bot] FATAL: URL/domain in generated body — aborting")
                 return 1
-            thread = build_thread_tweets(header, body, FOOTER, max_tweets)
+            tags = compose_tags(body, today)
+            l1, l2 = header_lines(risk, ddate, hist, tags)
+            thread = build_thread_tweets(f"{l1}\n{l2}", body, FOOTER, max_tweets)
             fmt = "thread"
         else:
             print("[llm] thread unusable — degrading to short single post")
@@ -804,12 +858,14 @@ def main() -> int:
         max_w = int(env("LONG_MAX_WORDS", "750"))
         body, used_llm = generate_body(risk, level, hist, ddate, today, min_w, max_w)
         if body:
-            text, fmt = build_long(risk, ddate, hist, body), "long"
+            text = build_long(risk, ddate, hist, body, compose_tags(body, today))
+            fmt = "long"
         else:
             print("[llm] long unusable — degrading to short single post")
 
     if not text and not thread:                    # short mode, or any degrade
-        text, fmt = build_short(risk, ddate, hist, today), "short"
+        text = build_short(risk, ddate, hist, today, compose_tags("", today))
+        fmt = "short"
 
     # URL guard on the final post TEXT (single) — image text is exempt & free
     if text and re.search(r"https?://|\b[\w-]+\.(?:com|net|org|io|xyz|co|ai)\b",
@@ -883,7 +939,7 @@ def main() -> int:
 
     ok, retry_short = post_tweet(text, media_id)
     if retry_short:                                # long post + no Premium
-        text = build_short(risk, ddate, hist, today)
+        text = build_short(risk, ddate, hist, today, compose_tags("", today))
         extra["format"] = "short (Premium fallback)"
         ok, _ = post_tweet(text, media_id)
     write_summary("POSTED" if ok else "POST FAILED", text, extra)
