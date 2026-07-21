@@ -535,6 +535,11 @@ function showHome(){
   document.body.classList.remove("is-sub");
   document.querySelectorAll(".view.on").forEach(function(v){ v.classList.remove("on"); });
   setActiveNav("home"); window.scrollTo(0,0);
+  /* the live price/risk chart may have been drawn while home was hidden (e.g. the page booted on
+     a sub-view hash such as #backtest), leaving it at Plotly's ~700px fallback width. Now that
+     home is visible again, resize it to the real container width. resize() preserves the chart's
+     range selection, heat map and live state — unlike a full re-render. */
+  if(typeof loadPlotly==="function"){ loadPlotly().then(function(){ var c=document.getElementById("chartPlot"); if(c&&c.data&&window.Plotly) Plotly.Plots.resize(c); }); }
 }
 function showView(view){
   var els=document.querySelectorAll('[data-view="'+view+'"]');
