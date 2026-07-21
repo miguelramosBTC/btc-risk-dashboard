@@ -1563,6 +1563,7 @@ if(!APPLE_PAY&&$id("pmApple"))$id("pmApple").style.display="none";
 
 /* ---- Pro plan chooser ---- */
 if($id("proCtaBtn"))$id("proCtaBtn").addEventListener("click",()=>{
+  closeAux(); /* close the API-access overlay so the Pro modal isn't stacked behind it (both share z-index) */
   $id("proMsg").textContent="";
   $id("proOverlay").classList.add("open");
 });
