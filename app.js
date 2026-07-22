@@ -550,9 +550,11 @@ function showView(view){
   setActiveNav(view); window.scrollTo(0,0);
   if(view==="forward"){ FWD_DONE=true; if(typeof loadPlotly==="function"){ loadPlotly().then(function(){ buildForward(); if(!SIM_LAST) runSimulation(); }); } }
   /* the backtest chart is first drawn while its view is display:none, so Plotly measures no
-     container width and falls back to its ~700px default (half the card). Re-render once the
-     view is visible so it measures the real width and spans the full card. */
-  if(view==="backtest"){ if(typeof loadPlotly==="function"){ loadPlotly().then(function(){ if(BT_LAST) renderBacktest(BT_LAST); else doBacktest(); }); } }
+     container width and caches its ~700px fallback (half the card). Plotly.react reuses that
+     cached width, so a re-render alone does NOT recover it — only Plots.resize re-measures the
+     now-visible container. Mirror the live-chart fix in showHome(): resize if already drawn,
+     otherwise draw it (which happens while the view is visible, so it measures correctly). */
+  if(view==="backtest"){ if(typeof loadPlotly==="function"){ loadPlotly().then(function(){ var c=document.getElementById("btCurve"); if(c&&c.data&&window.Plotly) Plotly.Plots.resize(c); else if(BT_LAST) renderBacktest(BT_LAST); else doBacktest(); }); } }
 }
 var VIEW_MAP={about:1,strategy:1,backtest:1,forward:1,howitworks:1,faq:1,support:1};
 function routeTo(hash){
