@@ -90,6 +90,25 @@ python3 tools/check_copy.py --inventory      # the P6 worklist
 python3 etl/daily_v3.py --dry-run            # compute and report, write nothing
 ```
 
-Dependencies are numpy and pandas only. `statsmodels` is a test-only
-cross-check that skips when absent; keep it that way — the daily job must not
-grow a dependency it does not need.
+## Dependencies: numpy and pandas only. This is load-bearing.
+
+The process that writes the tape must run on numpy + pandas. `statsmodels` and
+`scipy` are test-only and must stay behind `importorskip`.
+
+The trap that already caught us once: **`Series.corr(method="spearman")` imports
+scipy.** With scipy absent it raised inside a gate, which turned a dependency
+failure into a non-zero exit on the step whose job is to append a row — so no
+row was ever committed and the log looked like a gate failure. Spearman is
+Pearson on the ranks; use `validate._spearman`, which is exact to 12 decimal
+places including ties. Before adding any import to `model/v3/` or `etl/`, ask
+whether the daily append needs it. It almost never does.
+
+## Everything a run writes stays inside the path it was given
+
+`--tape /tmp/x.jsonl` must not write a window into the real `series/`. Use
+`etl.window_for(tape_path)`. A test run that leaves artifacts in the working
+tree is one `git add -A` away from committing a fixture as production data.
+
+Likewise `load_inputs` defaults to the live Coin Metrics dump and uses a local
+CSV only when one is passed by name. A stray `btc.csv` must never silently
+freeze the daily job on stale inputs while every log line reads "success".

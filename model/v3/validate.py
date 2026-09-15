@@ -90,6 +90,22 @@ class Gate:
         return f"[{head}] {self.name}\n" + "\n".join("       " + l for l in self.lines)
 
 
+def _spearman(x: pd.Series, y: pd.Series) -> float:
+    """Spearman without scipy: it IS Pearson on the ranks.
+
+    `Series.corr(method="spearman")` imports scipy, which the daily job does not
+    otherwise need. Since the ETL that writes the tape must run on numpy+pandas
+    alone, a missing scipy turned an import error into a non-zero exit on the
+    step whose job is to append a row -- a dependency failure wearing a gate
+    failure's clothes. pandas' average-rank tie handling matches scipy's exactly;
+    verified identical to 12 decimal places on tied data.
+    """
+    d = pd.concat([x.rename("x"), y.rename("y")], axis=1).dropna()
+    if len(d) < 3:
+        return float("nan")
+    return float(d["x"].rank().corr(d["y"].rank()))
+
+
 def _quintile_rank(tape: pd.Series, date: str) -> float | None:
     """The day's causal rank, read straight off the tape.
 
@@ -259,7 +275,7 @@ def gate_nested_baseline(tape: pd.Series, raw: pd.DataFrame, maps_mod,
     # costs 1,400 days), so scoring them on their own live ranges compares
     # different decades and is not a baseline test at all.
     X = pd.DataFrame(cand).join(fwd.rename("f")).dropna().loc[:end]
-    scores = {k: -X[k].corr(X["f"], method="spearman") for k in cand}
+    scores = {k: -_spearman(X[k], X["f"]) for k in cand}
     g.note(f"common sample n={len(X)}  {X.index[0].date()} -> {X.index[-1].date()}")
     for k in cand:
         g.note(f"{k:>14s}: Spearman(-signal, fwd{horizon}) = {scores[k]:+.4f}")
@@ -273,9 +289,8 @@ def gate_nested_baseline(tape: pd.Series, raw: pd.DataFrame, maps_mod,
         idx = np.concatenate([blocks[i] for i in rng.integers(0, len(blocks), len(blocks))])
         s_ = X.iloc[idx]
         best = max((k for k in cand if k != "v3 risk"),
-                   key=lambda k: -X[k].corr(X["f"], method="spearman"))
-        diffs.append((-s_["v3 risk"].corr(s_["f"], method="spearman")) -
-                     (-s_[best].corr(s_["f"], method="spearman")))
+                   key=lambda k: -_spearman(X[k], X["f"]))
+        diffs.append(-_spearman(s_["v3 risk"], s_["f"]) + _spearman(s_[best], s_["f"]))
     lo, hi = np.percentile(diffs, [2.5, 97.5])
     g.note(f"~{eff} independent {horizon}-day blocks; v3 minus best baseline "
            f"95% CI [{lo:+.3f}, {hi:+.3f}]"
@@ -292,8 +307,7 @@ def gate_nested_baseline(tape: pd.Series, raw: pd.DataFrame, maps_mod,
             idx = np.concatenate([blocks[i] for i in
                                   rng.integers(0, len(blocks), len(blocks))])
             s_ = X.iloc[idx]
-            diffs.append((-s_["v3 risk"].corr(s_["f"], method="spearman")) -
-                         (-s_[name].corr(s_["f"], method="spearman")))
+            diffs.append(-_spearman(s_["v3 risk"], s_["f"]) + _spearman(s_[name], s_["f"]))
         lo_n, hi_n = np.percentile(diffs, [2.5, 97.5])
         g.check(not (hi_n < 0),
                 f"non-inferior to {name}: v3 {scores['v3 risk']:+.4f} vs "

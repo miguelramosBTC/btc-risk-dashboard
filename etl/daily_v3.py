@@ -127,7 +127,11 @@ def load_inputs(csv: str | None = None, use_api: bool = True) -> pd.DataFrame:
     Coin Metrics community is the only required source (decision of 2026-09-11);
     nothing else enters the daily job.
     """
-    src = csv or (CSV_URL if not Path("btc.csv").exists() else "btc.csv")
+    # Default to the live dump. Preferring a local btc.csv whenever one happens to
+    # exist meant that committing a snapshot -- or leaving one behind from a test
+    # run -- would silently freeze the daily job on stale inputs while every log
+    # line still read "success". A local file is used only when asked for by name.
+    src = csv or CSV_URL
     print(f"[data] reading {src}")
     df = pd.read_csv(src, parse_dates=["time"]).sort_values("time")
     # §9.2: persist both vintages, so a restatement can be traced to its source
@@ -499,9 +503,23 @@ def map_support(tape_path: Path = TAPE, n_q: int = 201) -> dict:
     return out
 
 
-def write_window(path: Path = WINDOW, tape_path: Path = TAPE,
+def window_for(tape_path: Path) -> Path:
+    """The window file that belongs to a given tape.
+
+    Derived, never a module constant: `--tape /tmp/x.jsonl` used to compute a
+    sandbox tape and then write the window into the REAL `series/` directory, so
+    a test run left a 90-row artifact in the working tree that `git add -A` would
+    commit. The only process allowed to write the tape must keep every output it
+    produces inside the path it was given.
+    """
+    tape_path = Path(tape_path)
+    return tape_path.with_name(tape_path.stem + "_last90.json")
+
+
+def write_window(path: Path | None = None, tape_path: Path = TAPE,
                  days: int = WINDOW_DAYS, dry_run: bool = False) -> dict:
     """The free-tier window the UI reads. Derived from the tape, never recomputed."""
+    path = Path(path) if path is not None else window_for(tape_path)
     rows = read_tape(tape_path)[-days:]
     doc = {
         "schema_version": SCHEMA_VERSION,
@@ -609,7 +627,7 @@ def main(argv=None) -> int:
 
     append_rows(tape, tape_path, bootstrap=a.bootstrap, dry_run=a.dry_run,
                 allow_stale=a.allow_stale_bootstrap)
-    write_window(WINDOW, tape_path, dry_run=a.dry_run)
+    write_window(window_for(tape_path), tape_path, dry_run=a.dry_run)
     alerts = health_check(tape_path)
     # Report, but do not fail the append: committing the row matters more than
     # surfacing the alert here, and the alert is surfaced by --health-only in a

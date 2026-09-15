@@ -15,6 +15,7 @@ import os
 import sys
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -288,3 +289,68 @@ def test_daily_append_is_not_subject_to_the_freshness_guard(etl, tape, tmp_path)
     etl.append_rows(tape.iloc[:-10], p, bootstrap=True, allow_stale=True)
     rows = etl.append_rows(tape, p)
     assert len(rows) == 10
+
+
+# --------------------------------------------------------------------------- #
+#  Defects found in review, 2026-09-15
+# --------------------------------------------------------------------------- #
+def test_no_scipy_in_the_append_path(etl):
+    """The process that writes the tape must run on numpy + pandas alone.
+
+    `Series.corr(method="spearman")` imports scipy. With scipy absent that turned
+    an import error into a non-zero exit on the step whose job is to append a
+    row — a dependency failure wearing a gate failure's clothes, and no row ever
+    committed. Spearman is Pearson on ranks; the replacement is exact.
+    """
+    import builtins
+    real = builtins.__import__
+
+    def blocked(name, *a, **k):
+        if name.split(".")[0] == "scipy":
+            raise ModuleNotFoundError("scipy blocked for this test")
+        return real(name, *a, **k)
+
+    builtins.__import__ = blocked
+    try:
+        import importlib
+
+        from model.v3 import validate
+        importlib.reload(validate)
+        x = pd.Series(np.arange(500.0))
+        y = x.iloc[::-1].reset_index(drop=True)
+        assert validate._spearman(x, y) == pytest.approx(-1.0, abs=1e-9)
+    finally:
+        builtins.__import__ = real
+
+
+def test_spearman_matches_scipy_including_ties(etl):
+    pytest.importorskip("scipy")
+    from model.v3 import validate
+    rng = np.random.default_rng(3)
+    a = pd.Series(rng.normal(size=2000))
+    b = pd.Series(rng.normal(size=2000))
+    a.iloc[::7] = a.iloc[0]          # ties are where naive versions drift
+    b.iloc[::11] = b.iloc[3]
+    assert validate._spearman(a, b) == pytest.approx(
+        a.corr(b, method="spearman"), abs=1e-12)
+
+
+@needs_csv
+def test_tape_path_confines_every_output(etl, tape, tmp_path):
+    """--tape must redirect the window too, or a test run writes into series/."""
+    p = tmp_path / "sandbox.jsonl"
+    assert etl.window_for(p) == tmp_path / "sandbox_last90.json"
+    etl.append_rows(tape, p, bootstrap=True, allow_stale=True)
+    etl.write_window(etl.window_for(p), p)
+    assert (tmp_path / "sandbox_last90.json").exists()
+    # the real series/ directory must be untouched by a sandbox run
+    assert not (tmp_path / "series").exists()
+
+
+def test_local_csv_is_never_preferred_silently(etl):
+    """A stray btc.csv must not hijack the daily job's inputs."""
+    import inspect
+    src = inspect.getsource(etl.load_inputs)
+    code = "\n".join(l for l in src.splitlines() if not l.lstrip().startswith("#"))
+    assert "src = csv or CSV_URL" in code
+    assert 'Path("btc.csv").exists()' not in code

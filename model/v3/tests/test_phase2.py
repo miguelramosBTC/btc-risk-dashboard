@@ -401,10 +401,14 @@ def test_rank_is_monotone_within_a_date_but_not_across_dates(raw, params):
     genuinely move. Measured: cross-date rho = 0.958, and the nested-baseline
     point estimate falls from +0.016 to -0.056 under the rank.
     """
-    from model.v3 import compute
+    from model.v3 import compute, validate
     P = pillars.build_pillars(raw, params)
     d = compute.build_daily(P, raw["price"], params).dropna(subset=["rank_exact"])
-    rho = d["smooth01"].corr(d["rank_exact"], method="spearman")
+    # validate._spearman, not Series.corr(method="spearman"): the latter imports
+    # scipy, which the daily job does not carry, so this test failed the CI step
+    # whose job is to append a row. Same statistic -- Pearson on the ranks, exact
+    # to 1e-12 including ties (test_spearman_matches_scipy_including_ties).
+    rho = validate._spearman(d["smooth01"], d["rank_exact"])
     assert 0.90 < rho < 0.999, "not a fixed monotone transform; do not assume it is"
 
     # same blend value, different era, different rank

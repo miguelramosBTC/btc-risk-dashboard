@@ -21,8 +21,8 @@ No v3 compute exists yet. v2 remains the public gauge.
 
 | Item | Rule |
 |---|---|
-| Pillars (5) | **V** valuation · **G** growth residual · **T** trend · **M** security residual · **Σ** volatility regime. **F** (holder flow) is **inactive**: no public realized-profit/loss series with a fallback exists. |
-| Weights | V 0.31 · G 0.24 · T 0.15 · M 0.10 · Σ 0.20 (sum = 1.00). Renormalized over live pillars. |
+| Families (4 live) | **V** valuation · **G** growth residual · **T** trend · **Σ** volatility regime. **M** (security residual) was **demoted 2026-09-11** — `mctc_mod` is still computed and published but does not vote (r(V,M)=0.932). **F** (holder flow) is **inactive**: no public realized-profit/loss series with a fallback exists. See decisions 0, 26 and A/B of 2026-09-11. |
+| Weights | **V 0.31 · G 0.24 · T 0.15 · Σ 0.20 — active weight 0.90.** M's 0.10 is **retired, not recycled**. Renormalized over the families live that day. (An earlier revision of this row showed the pre-demotion five-pillar weights; `model/v3/constants.py` is the binding source and a test asserts this exact dict.) |
 | Maps | Empirical CDFs only. `F_exp` expanding from t₀ = 2010-07-18 (first day with valid `PriceUSD` and `CapMVRVCur`); `F_4y` on a trailing 1,461-day window. `F(x_t) = (#{x_s ≤ x_t} − 0.5) / \|W\|`, clipped to [0.001, 0.999]. No logistic maps in the official path. |
 | Nmin | 400 days (expanding) · 200 days (4-year) · 1,200 closes (growth fit). A pillar is inactive before its Nmin. |
 | V | `0.65·F_exp(MVRV) + 0.35·F_4y(MVRV)`, raw = `CapMVRVCur`. |
