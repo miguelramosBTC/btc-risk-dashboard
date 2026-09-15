@@ -79,10 +79,21 @@ def test_clean_v3_copy_passes(cc, tmp_path):
     assert cc.main(["--root", str(tmp_path)]) == 0
 
 
-def test_the_live_site_currently_fails(cc):
-    """Defect G is open. If this ever passes without a copy rewrite, the checker
-    has been weakened rather than the copy fixed."""
+def test_the_live_site_names_only_what_it_computes(cc):
+    """Defect G is closed, and must stay closed.
+
+    Until the v3 copy rewrite this test read `hits_fatal_now > 0` and existed to
+    stop the checker being weakened instead of the copy being fixed. The copy was
+    fixed -- 39 defect-G strings and 92 describing v2 machinery were rewritten --
+    so the tripwire is inverted rather than deleted. This direction is strictly
+    stronger: it fails on any regression, and it also fails if someone deletes a
+    FORBIDDEN pattern to make a new claim pass.
+    """
     if not (ROOT / "index.html").exists():
         pytest.skip("site files not present")
     rep = cc.audit(ROOT)
-    assert rep["hits_fatal_now"] > 0
+    assert rep["hits_fatal_now"] == 0, rep["violations"]
+    assert rep["total_hits"] == 0, rep["violations"]
+    assert cc.main(["--root", str(ROOT)]) == 0
+    # the checker must still be armed: the patterns it lost teeth on are named
+    assert {"uncomputed: hashrate", "eleven signals"} <= set(cc.FORBIDDEN)
