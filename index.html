@@ -79,6 +79,10 @@
             </svg>
           </div>
           <div class="gauge-num" id="gNum">0.30</div>
+          <!-- v3 only: the committed row's disagreement band, and the intraday
+               trend overlay. Both stay hidden while the page serves v2. -->
+          <div class="gauge-band" id="gBand" hidden></div>
+          <div class="gauge-overlay" id="gOverlay" hidden></div>
         </div>
       </div>
 
@@ -145,6 +149,10 @@
           </div>
           <input type="range" class="mtx-range" id="mtxRange" min="0" max="1" step="0.01" value="0.30" aria-label="Risk level">
         </div>
+        <!-- v3 only: says exactly which families the inversion moves and which it
+             holds, so "valuation-implied price" is never read as a model inversion
+             of the whole score. Hidden while the page serves v2. -->
+        <div class="mtx-caption" id="mtxCaption" data-i18n="mtx_caption_v3" hidden></div>
       </div>
 
       <!-- 4 · risk-level notifications (Time / Price / Strategy based) -->
@@ -704,6 +712,11 @@
   </div>
 </footer>
 <script src="/data.js"></script>
-<script src="/app.js?v=14"></script>
+<!-- v3 data layer. Must load BEFORE app.js: it defines the global V3 that app.js
+     reads the official score from. It self-loads /series/v3.0_last90.json and
+     leaves V3.active false if that file is missing, malformed or stale, in which
+     case app.js keeps serving v2 exactly as before. -->
+<script src="/v3.js?v=1"></script>
+<script src="/app.js?v=15"></script>
 </body>
 </html>

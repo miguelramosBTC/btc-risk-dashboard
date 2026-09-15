@@ -188,6 +188,15 @@ const I18N = {
   act_buy:"Compra %M× tu base esta semana.", act_hold:"Sin acción — espera a que el riesgo baje de 0.30 o supere 0.60.",
   act_sell:"Vende %P/15 de tu stack.", amt_buy:"Comprar $%V", amt_sell:"Vender %P/15", amt_none:"Sin acción",
   stamp_live:"en vivo · %D", stamp_embed:"a fecha de %D",
+  /* --- v3 --- */
+  v3_band:"banda %L–%H",
+  v3_band_help:"Cuánto discrepan entre sí las cuatro familias hoy.",
+  v3_ov_lab:"Superposición de tendencia intradía — no es el riesgo",
+  v3_ov_val:"%V (%S%D frente al cierre)",
+  v3_ov_note:"Solo mueve la pata de tendencia. El riesgo oficial es el de la fila publicada y cambia una vez al día.",
+  v3_stamp:"fila publicada · %D",
+  mtx_unreach:"inalcanzable",
+  mtx_caption_v3:"Precio implícito por valoración: invierte únicamente las familias de valoración, crecimiento y tendencia, manteniendo la familia de volatilidad en su último cierre. No es una inversión del modelo completo.",
   sub_ok:"¡Listo! Te avisaremos cada semana. (Suscripción de muestra — el envío se conectará pronto.)",
   sub_bad:"Introduce un correo válido.",
   bt_more:"+%P% más Bitcoin por dólar con DCA dinámico", bt_less:"El DCA dinámico acumuló %P% menos aquí (ver nota)",
@@ -416,6 +425,15 @@ const I18N = {
   act_buy:"Buy %M× your base this week.", act_hold:"No action — wait for risk to fall below 0.30 or rise above 0.60.",
   act_sell:"Sell %P/15 of your stack.", amt_buy:"Buy $%V", amt_sell:"Sell %P/15", amt_none:"No action",
   stamp_live:"live · %D", stamp_embed:"as of %D",
+  /* --- v3 --- */
+  v3_band:"band %L–%H",
+  v3_band_help:"How much the four families disagree with each other today.",
+  v3_ov_lab:"Intraday trend overlay — not the risk score",
+  v3_ov_val:"%V (%S%D vs the close)",
+  v3_ov_note:"Moves the trend leg only. The official risk is the published row and changes once a day.",
+  v3_stamp:"published row · %D",
+  mtx_unreach:"unreachable",
+  mtx_caption_v3:"Valuation-implied price: inverts the valuation, growth and trend families only, holding the volatility family at its last close. Not a model inversion of every family.",
   sub_ok:"You're on the list! We'll email you weekly. (Sample sign-up — delivery wiring comes next.)",
   sub_bad:"Please enter a valid email.",
   bt_more:"+%P% more Bitcoin per dollar with dynamic DCA", bt_less:"Dynamic DCA accumulated %P% less here (see note)",
@@ -501,7 +519,7 @@ function applyLang(){
   document.getElementById("lang-en").classList.toggle("on", LANG==="en");
   renderContent();
 }
-function setLang(l){ LANG=l; applyLang(); updateAction(LIVE.risk,LIVE.date,LIVE.live); renderFwdCards(); buildSimScen(); if(SIM_LAST) renderSimResults(SIM_LAST); if(BT_LAST) renderBacktest(BT_LAST); }
+function setLang(l){ LANG=l; applyLang(); updateAction(LIVE.risk,LIVE.date,LIVE.live); renderOverlay(LIVE_PX); renderFwdCards(); buildSimScen(); if(SIM_LAST) renderSimResults(SIM_LAST); if(BT_LAST) renderBacktest(BT_LAST); }
 
 /* ---- math (verbatim from the reference model) ---- */
 function sig(x,c,b){ return 1/(1+Math.exp(-(x-c)/b)); }
@@ -609,17 +627,67 @@ function confColor(c){ /* 0..10 -> red(low) → amber → green(high) */
   for(let i=1;i<stops.length;i++){ if(f<=stops[i][0]){ const a0=stops[i-1][0],c0=stops[i-1][1],a1=stops[i][0],c1=stops[i][1];
     const g=(f-a0)/((a1-a0)||1), cc=c0.map((v,k)=>Math.round(v+(c1[k]-v)*g)); return "rgb("+cc[0]+","+cc[1]+","+cc[2]+")"; } }
   const l=stops[stops.length-1][1]; return "rgb("+l[0]+","+l[1]+","+l[2]+")"; }
+/* ---- v3 takeover ----------------------------------------------------------
+   True only once v3.js has loaded a fresh, valid window. Until the tape is
+   bootstrapped this is false and every path below behaves exactly as v2 did. */
+function v3on(){ return typeof V3!=="undefined" && V3 && V3.active && V3.last; }
+
+/* The official number, READ from the committed row. Never recomputed here.
+   v2 shipped three different "current risk" objects — data.json, the heldSubs
+   gauge recompute, and the matrix — and they drifted apart. v3 has one, and this
+   is the only function allowed to answer "what is the risk right now". */
+function officialRisk(){
+  return v3on() ? {risk:V3.last.risk01, date:V3.last.asof_date, live:false} : null;
+}
+
 function updateAction(risk,date,live){
+  /* Choke point. When v3 is active the committed row wins over whatever a caller
+     passed, so a live recompute can never reach the gauge — not from refresh(),
+     not from a future call site that forgets. */
+  const off=officialRisk();
+  if(off){ risk=off.risk; date=off.date; live=off.live; }
   LIVE={risk,date,live}; const a=actionFor(risk), col=riskColor(risk);
   const gNum=document.getElementById("gNum"); if(gNum){ gNum.textContent=risk.toFixed(2); gNum.style.color=col; }
+  /* Band = the image of the family-disagreement interval, straight off the row.
+     Asymmetric about the score because the rank map is nonlinear; that is
+     expected, not a rendering bug. */
+  const gb=document.getElementById("gBand");
+  if(gb){
+    if(off && V3.last.risk_lo!=null && V3.last.risk_hi!=null){
+      gb.textContent=t("v3_band").replace("%L",(V3.last.risk_lo/100).toFixed(2))
+                                 .replace("%H",(V3.last.risk_hi/100).toFixed(2));
+      gb.title=t("v3_band_help"); gb.hidden=false;
+    } else { gb.hidden=true; }
+  }
   const gReg=document.getElementById("gRegime"); if(gReg){ gReg.textContent=t(a.rk); gReg.style.color=col; }
   const gc=document.getElementById("gConf"); if(gc) gc.textContent=LIVE_CONF+"/10";
   const thm=document.getElementById("thermoMerc"); if(thm){ var tf=clip(LIVE_CONF/10,0,1), ttop=100-(100-14)*tf; thm.setAttribute("y",ttop.toFixed(1)); thm.setAttribute("height",(100-ttop).toFixed(1)); }
   const nd=document.getElementById("needle"); if(nd) nd.setAttribute("transform","rotate("+((risk-0.5)*180).toFixed(1)+" 140 140)");
   const sn=document.getElementById("stripNeedle"); if(sn) sn.style.left="calc("+(risk*100).toFixed(1)+"% - 1.5px)";
   const gd=document.getElementById("gDot"); if(gd) gd.style.background=live?"#36c08a":"#e7b53b";
-  const gs=document.getElementById("gStamp"); if(gs) gs.textContent=(live?t("stamp_live"):t("stamp_embed")).replace("%D",date);
+  const gs=document.getElementById("gStamp");
+  if(gs) gs.textContent=(off?t("v3_stamp"):(live?t("stamp_live"):t("stamp_embed"))).replace("%D",date);
   if(typeof highlightMatrix==="function") highlightMatrix(risk);
+}
+
+/* ---- intraday trend overlay ------------------------------------------------
+   Rendered in its own element, with its own label, and never as "risk". It moves
+   the trend leg only; V, G and Sigma stay at the committed close. It exists so a
+   reader can see which way the price-sensitive part of the tape leans between
+   daily commits — not so the page can imply an unpublished score. */
+function renderOverlay(spot){
+  const el=document.getElementById("gOverlay"); if(!el) return;
+  if(!v3on() || !isFinite(spot)){ el.hidden=true; return; }
+  const ov=V3.intradayOverlay(spot);
+  if(!ov || !isFinite(ov.value)){ el.hidden=true; return; }
+  const sign=ov.delta>=0?"+":"−";
+  el.innerHTML='<span class="ov-lab"></span><span class="ov-val"></span> <span class="ov-note"></span>';
+  el.querySelector(".ov-lab").textContent=t("v3_ov_lab");
+  el.querySelector(".ov-val").textContent=t("v3_ov_val")
+    .replace("%V",ov.value.toFixed(2)).replace("%S",sign)
+    .replace("%D",Math.abs(ov.delta).toFixed(2));
+  el.querySelector(".ov-note").textContent=t("v3_ov_note");
+  el.hidden=false;
 }
 
 /* ---- main chart ---- */
@@ -741,7 +809,16 @@ async function refresh(){
     CUR={t:tt,p:pp,r:rr,c:cc};
     LIVE_PX=pp[pp.length-1]; LIVE_CONF=cc[cc.length-1];
     if(window.Plotly) drawChart();
-    if(last) updateAction(last.risk,last.date,true);
+    /* The heldSubs recompute (riskAt) still extends the v2 CHART series above,
+       but under v3 it must not touch the official number: that is read from the
+       committed row and changes once a day. What moves intraday is the labelled
+       overlay, which is not risk. */
+    if(v3on()){
+      updateAction();                       /* re-reads the committed row */
+      renderOverlay(LIVE_PX);
+    } else if(last){
+      updateAction(last.risk,last.date,true);
+    }
     if(typeof buildRanges==="function") buildRanges();
     if(typeof buildMatrix==="function") buildMatrix();
   }catch(e){}
@@ -1179,27 +1256,50 @@ function priceForRisk(target){
   for(let k=0;k<60;k++){ const mid=Math.sqrt(lo*hi); if(riskRaw(mid)<rt) lo=mid; else hi=mid; }
   return Math.sqrt(lo*hi);
 }
+/* Under v3 the inversion lives in v3.js, which maps through the composite
+   quantile grid so the matrix speaks the same RANK the gauge shows. It returns
+   null when a level is unreachable by price alone: with the volatility family
+   held at its last close the blend saturates, so the reachable range is roughly
+   0.01–0.997 and the extremes have no price at all. "—" is the honest answer;
+   a bisection clamped to lo/hi would print a confident fantasy. */
+function mtxPriceFor(target){
+  if(v3on()){ const p=V3.priceForRisk(target); return (p!=null && isFinite(p)) ? p : null; }
+  return priceForRisk(target);
+}
 const MTX_LEVELS=[0.05,0.10,0.15,0.20,0.25,0.30,0.40,0.50,0.60,0.70,0.80,0.90,0.95];
 function fmtPx(v){ if(v>=1e6) return "$"+(v/1e6).toFixed(2)+"M"; if(v>=1000) return "$"+Math.round(v).toLocaleString(); if(v>=1) return "$"+v.toFixed(0); return "$"+v.toFixed(2); }
 let MSS_INIT=false;
 function updateMtxSlider(v){
-  var r=clip(v,0,1), px=priceForRisk(r), cur=LIVE_PX||_lastClose, chg=(px/cur-1)*100, col=riskColor(r);
+  var r=clip(v,0,1), px=mtxPriceFor(r), cur=LIVE_PX||_lastClose, col=riskColor(r);
   var er=document.getElementById("mssRisk"); if(er){ er.textContent=r.toFixed(2); er.style.color=col; }
-  var ep=document.getElementById("mssPx"); if(ep) ep.textContent=fmtPx(px);
-  var ec=document.getElementById("mssChg"); if(ec){ var sg=chg>=0?"+":""; ec.textContent=(Math.abs(chg)<0.05?"":"("+sg+chg.toFixed(1)+"%)"); ec.className="mss-chg "+(chg>=0?"up":"down"); }
+  var ep=document.getElementById("mssPx"); if(ep) ep.textContent=(px==null)?"—":fmtPx(px);
+  var ec=document.getElementById("mssChg");
+  if(ec){
+    if(px==null){ ec.textContent=t("mtx_unreach"); ec.className="mss-chg"; }
+    else { var chg=(px/cur-1)*100, sg=chg>=0?"+":"";
+      ec.textContent=(Math.abs(chg)<0.05?"":"("+sg+chg.toFixed(1)+"%)");
+      ec.className="mss-chg "+(chg>=0?"up":"down"); }
+  }
   var mr=document.getElementById("mtxRange"); if(mr) mr.style.setProperty("--thumb-col",col);
 }
 function buildMatrix(){
   const body=document.getElementById("mtxBody"); if(!body) return;
   reanchor();
   const cur=LIVE_PX||_lastClose;
-  MTX_ROWS=MTX_LEVELS.map(lvl=>({lvl,price:priceForRisk(lvl)}));
+  MTX_ROWS=MTX_LEVELS.map(lvl=>({lvl,price:mtxPriceFor(lvl)}));
   body.innerHTML=MTX_ROWS.map(row=>{
+    const lead='<tr><td class="r-lvl"><span class="sw" style="background:'+riskColor(row.lvl)+'"></span>'+row.lvl.toFixed(2)+'</td>';
+    if(row.price==null){
+      /* No price reaches this level while the volatility family is where it is. */
+      return lead+'<td class="r-px">—</td><td class="r-chg">'+t("mtx_unreach")+'</td></tr>';
+    }
     const chg=(row.price/cur-1)*100, cls=chg>=0?"up":"down", sign=chg>=0?"+":"";
-    return '<tr><td class="r-lvl"><span class="sw" style="background:'+riskColor(row.lvl)+'"></span>'+row.lvl.toFixed(2)+'</td>'+
+    return lead+
       '<td class="r-px">'+fmtPx(row.price)+'</td>'+
       '<td class="r-chg '+cls+'">'+(Math.abs(chg)<0.05?'·':sign+chg.toFixed(1)+'%')+'</td></tr>';
   }).join("");
+  const cap=document.getElementById("mtxCaption");
+  if(cap){ cap.textContent=t("mtx_caption_v3"); cap.hidden=!v3on(); }
   highlightMatrix(LIVE.risk);
   var _mr=document.getElementById("mtxRange");
   if(_mr){ if(!MSS_INIT){ _mr.value=((LIVE.risk!=null?LIVE.risk:0.3)).toFixed(2); MSS_INIT=true; } updateMtxSlider(parseFloat(_mr.value)); }
@@ -1237,8 +1337,12 @@ async function tickPrice(){
   const dir=v>PREV_TICK?1:(v<PREV_TICK?-1:0); PREV_TICK=v; LIVE_PX=v; paintPrice(v,dir);
   const body=document.getElementById("mtxBody");
   if(body&&MTX_ROWS.length){ Array.prototype.forEach.call(body.querySelectorAll("td.r-chg"),(td,k)=>{
-    if(!MTX_ROWS[k]) return; const chg=(MTX_ROWS[k].price/v-1)*100;
+    if(!MTX_ROWS[k]) return;
+    if(MTX_ROWS[k].price==null){ td.className="r-chg"; td.textContent=t("mtx_unreach"); return; }
+    const chg=(MTX_ROWS[k].price/v-1)*100;
     td.className="r-chg "+(chg>=0?"up":"down"); td.textContent=Math.abs(chg)<0.05?'·':(chg>=0?'+':'')+chg.toFixed(1)+'%'; }); }
+  /* The spot tick moves the overlay, never the score. */
+  renderOverlay(v);
 }
 let tickTimer=null;
 function startTicker(){ if(tickTimer) return; paintPrice(_lastClose,0); tickPrice(); tickTimer=setInterval(tickPrice,6000); }
@@ -1650,6 +1754,19 @@ applyLang();
 renderFwdCards();
 buildSimScen();
 updateAction(LIVE.risk,LIVE.date,false);
+/* v3.js loads its window asynchronously, so the first paint above is always v2.
+   If the window turns out to be present, valid and fresh, re-render from the
+   committed row. If it does not, nothing happens and the page stays on v2 —
+   which is the whole point of the fallback: this file can ship before the tape
+   is bootstrapped without the page ever showing a hole. */
+if(typeof V3!=="undefined" && V3 && V3.ready){
+  V3.ready.then(function(){
+    if(!v3on()) return;
+    updateAction();
+    renderOverlay(LIVE_PX);
+    if(typeof buildMatrix==="function") buildMatrix();
+  }).catch(function(){});
+}
 doBacktest();
 /* simulator control wiring */
 document.getElementById("simRun").addEventListener("click",runSimulation);
