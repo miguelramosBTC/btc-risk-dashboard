@@ -1,237 +1,231 @@
-# v3.0 hand-off status
+# v3.0 landing status
 
-**As of this commit, v3 is documentation only. It cannot run.** The live site,
-the API, the email engine and the X bot all still read v2, exactly as
-`docs/BOOTSTRAP_RUNBOOK.md` step 1 requires.
+The v3 backend is landed and verified. **The frontend cutover has not started** —
+`index.html`, `app.js` and the three backend consumers still read v2, and the
+live site still serves v2.
 
-This file exists because the alternative — a repo that reads as if v3 were
-installed — would be the same class of defect the project spends ten rules
-avoiding. `CLAUDE.md` rule 8: *report negative results as results*.
+Two defects found during verification are open and are **blockers for the daily
+job**, not for the model. Both are recorded in full below because
+`CLAUDE.md` rule 8 says negative results are results.
+
+---
+
+## Verification, 2026-09-15
+
+All three checks from the drop manifest, run on this tree.
+
+| Check | Result |
+|---|---|
+| `sha256sum -c MANIFEST.txt` | **33 OK, 0 FAILED** |
+| `python3 -m pytest model/v3/tests -q` | **110 passed, 2 skipped, 0 failed** (112 collected) |
+| `python3 -m model.v3.validate` | **exit 0 — 10/10 gates pass** |
+
+`series/v2_frozen.json` landed byte-identical: SHA-256
+`0de9ddd6fe3f59aabd014042ca642946c725db807bdae47ec833fada1167067c`, 170,040
+bytes, as `series/README.md` requires.
+
+**`model.v3.validate` reproduces `docs/gate_report_v3.0.txt` byte-for-byte.**
+That is the strongest evidence in this repository that the committed gate report
+is the output of the committed code, on the committed constitution.
+
+The two skips are both legitimate and neither is a masked failure:
+
+| Skip | Reason |
+|---|---|
+| `test_phase2.py:74` | `statsmodels` absent — a test-only cross-check, and `CLAUDE.md` requires it stay optional. |
+| `test_phase4.py:182` | *"no single-family rows in this tape"* — decision 18's 400-observation rank warm-up removed every one- and two-family row, so the fixture the test needs cannot exist. Data-dependent by design. |
+
+### Two things the checks need that the repo does not carry
+
+1. **`btc.csv`** — the Coin Metrics snapshot. Without it **63 of 112 tests skip**
+   (`btc.csv not present`) and the suite reports a misleading *"49 passed"*.
+   Fetch it from the URL in `etl/daily_v3.py`:
+   ```
+   curl -sSL -o btc.csv https://raw.githubusercontent.com/coinmetrics/data/master/csv/btc.csv
+   ```
+   It is **gitignored on purpose**: `load_inputs()` prefers a local `btc.csv`
+   over the live URL, so a committed snapshot would silently freeze the daily job
+   on stale inputs — which looks exactly like success in the log.
+2. **`scipy`** — see defect 1.
+
+---
+
+## Defect 1 — `scipy` is undeclared, and CI will fail every day
+
+**`pandas.Series.corr(method="spearman")` requires `scipy`.** It is called six
+times in `model/v3/validate.py:262-296` — the **nested-baseline gate** — and once
+in `model/v3/tests/test_phase2.py:407`.
+
+`requirements.txt` declares numpy and pandas only. On a clean install:
+
+```
+python3 -m pytest model/v3/tests -q   ->  1 failed, 109 passed
+                                          ModuleNotFoundError: No module named 'scipy'
+python3 -m model.v3.validate          ->  exit 1, same ImportError
+```
+
+That is not a gate failure. It is an import error wearing a gate failure's exit
+code — which is worse, because `validate.py`'s contract is *"exit non-zero on any
+failure"* and a reader sees a non-zero exit and assumes a gate broke.
+
+**In `.github/workflows/btc-data-v3.yml` this stops the tape.** The job installs
+`-r requirements.txt pytest`, and its second step —
+
+```yaml
+- name: Unit tests (a broken model must not write a row)
+  run: python3 -m pytest model/v3/tests -q
+```
+
+— has no `continue-on-error`. It fails, and **no row is ever appended.** The
+`Ship gates` step would also fail, but that one is `continue-on-error: true`.
+
+**The daily append path itself does not need scipy.** Verified by running the ETL
+with `scipy` blocked at import:
+
+```
+[compute] 5191 causal rows through 2026-05-23
+[dry-run] would append 5191 row(s)
+[exit] 0
+```
+
+No module under `model/` or `etl/` imports scipy directly. So `CLAUDE.md`'s
+*"dependencies are numpy and pandas only… the daily job must not grow a
+dependency it does not need"* is **still true of the job that writes the tape**.
+Only the test and gate surfaces need scipy.
+
+**Not fixed here.** The three repairs differ in what they cost, and rule 9
+reserves the choice:
+
+| Option | Cost |
+|---|---|
+| Add `scipy` to `requirements.txt` | Simplest, but grows the daily job's install with a dependency it provably does not need — the thing `CLAUDE.md` closes by forbidding. |
+| Install scipy only in the CI test/gate steps (`pip install -r requirements.txt pytest scipy`) | Keeps the runtime at numpy + pandas. Touches a shipped workflow. |
+| Replace the six `method="spearman"` calls with a numpy rank implementation | No new dependency anywhere, but it edits gate code, and the replacement must reproduce `docs/gate_report_v3.0.txt` to the digit or the change is invisible tampering with a gate. |
+
+---
+
+## Defect 2 — `--tape` does not redirect the window, so a test writes into `series/`
+
+`etl/daily_v3.py:612`:
+
+```python
+write_window(WINDOW, tape_path, dry_run=a.dry_run)
+```
+
+`--tape` redirects `tape_path`. It does **not** redirect `WINDOW`, which stays the
+module constant `Path("series/v3.0_last90.json")` (line 51). So any `main()` call
+that redirects the tape still writes the window to the **real repository path**.
+
+`model/v3/tests/test_phase4.py:234 test_append_does_not_fail_the_job_on_a_health_alert`
+does exactly that, three times, with `dry_run` false. Reproduced in isolation:
+
+```
+$ ls series/                 # README.md  v2_frozen.json
+$ pytest ".../test_phase4.py::test_append_does_not_fail_the_job_on_a_health_alert" -q
+1 passed
+$ ls series/                 # README.md  v2_frozen.json  v3.0_last90.json   <-- leaked
+```
+
+The leaked file is real-looking — 90 rows, `map_support.n = 5191`, last row
+2026-05-23 — but it is derived from a **deliberately stale fixture tape**, built
+with `--allow-stale-bootstrap --no-api` from a CSV the same test asserts is 114
+days old.
+
+**Why it matters.** `series/README.md` states the rule this breaks: *"Nothing in
+this directory is a build output… Any workflow that writes here must be reviewed
+against this README first."*
+
+- In `btc-data-v3.yml` the normal path is **contained**: the tests run at step 2,
+  the real ETL overwrites the window at step 3, and `git add series/…` comes
+  after. A green run commits the correct file.
+- The exposure is a **local** one, and it is easy to hit: run the tests, then
+  `git add -A`, and a fixture-derived window is committed as though the ETL had
+  produced it. Nothing in the diff would look wrong.
+- `--dry-run` is **not** affected. Verified: the dry run writes nothing.
+
+**Not fixed here.** The obvious repair is to derive the window path from the tape
+path, or add a `--window` argument. Either changes the signature of the only
+process allowed to write the tape, days before that process founds it — so it is
+the maintainer's call, not an agent's. A test-local `monkeypatch` of
+`etl.WINDOW` would also work and touches no shipped code, but it fixes the test
+rather than the footgun.
+
+**Neither defect was worked around by weakening a test.** Both tests are correct;
+one caught a missing dependency and the other caught a path that escapes its
+sandbox.
+
+---
+
+## The tape does not exist yet
+
+`series/v3.0.jsonl` has not been founded. `--bootstrap` is the maintainer's to
+run, and `CLAUDE.md` forbids an agent from running it.
+
+Local dry run on the CSV alone (`--no-api --csv btc.csv`):
+
+```
+[compute] 5191 causal rows through 2026-05-23
+[dry-run] would append 5191 row(s)
+```
+
+**5,191 through 2026-05-23 is the runbook's abort condition**, and it is expected
+here: the Coin Metrics community API is unreachable from this sandbox
+(`CONNECT tunnel failed, response 403`), so only the lagging CSV was read. The
+real dry run in Actions must report **~5,300 rows ending yesterday or today**. If
+it still says 5,191, stop — see `docs/BOOTSTRAP_RUNBOOK.md` §2.
+
+**Consequence for the frontend cutover:** with no tape there is no
+`series/v3.0_last90.json`, so `v3.js` sets `V3.active = false` and the page must
+serve v2. The v3 rendering path cannot be verified end-to-end against a real
+committed row until the tape is founded.
 
 ---
 
 ## What is committed
 
-| Path | State |
+| Path | Source |
 |---|---|
-| `CLAUDE.md` | hand-off file, **verbatim** |
-| `docs/CHANGELOG_v3.md` | hand-off file, **verbatim** — the authoritative record |
-| `docs/BOOTSTRAP_RUNBOOK.md` | hand-off file, **verbatim** |
-| `docs/gate_report_v3.0.txt` | hand-off file, **verbatim** — the 10/10 run on the 5,191-row tape |
-| `etl/daily_v3.py` | hand-off file, **verbatim** |
-| `.github/workflows/btc-data-v3.yml` | hand-off file, **verbatim** |
-| `docs/MODEL_v3.md` | **written for this commit**, derived from the four documents above, every claim labelled with its source |
-| `docs/SCHEMA_v3.0.md` | **written for this commit**, derived from `_row_to_json()` in `etl/daily_v3.py` |
-| `docs/HANDOFF_STATUS_v3.md` | this file |
+| `model/` — 11 modules, 8 test files, 2 package markers | drop, hash-verified |
+| `etl/daily_v3.py` | drop, hash-verified (supersedes the earlier sample: the composite grid is now built from the rank's true reference set, worth ~4.7 points of browser-vs-gauge drift) |
+| `tools/check_copy.py` | drop, hash-verified |
+| `v3.js` | drop, hash-verified — **staged, not yet wired into any page** |
+| `series/README.md`, `series/v2_frozen.json` | drop, hash-verified |
+| `docs/AUDIT_v3.0.md`, `docs/CHANGELOG_v3.md`, `docs/BOOTSTRAP_RUNBOOK.md` | drop, hash-verified |
+| `.github/workflows/btc-data-v3.yml`, `.github/workflows/copy-audit.yml` | drop, hash-verified |
+| `CLAUDE.md` | drop, hash-verified |
+| `docs/MODEL_v3.md`, `docs/SCHEMA_v3.0.md` | written from the above; see below |
+| `docs/gate_report_v3.0.txt` | reproduced byte-for-byte by `model.v3.validate` on this tree |
 
-Untouched, per runbook step 1: `index.html`, `app.js`, `data.json`, `data.js`,
-`style.css`, `btc_risk_model_v2.py`, `functions/`, `lib/`, `bot/`, `db/`,
-`send-notifications.mjs`, `btc-risk-weekly.mjs`, `.github/workflows/btc-data.yml`,
-`.github/workflows/btc-notify.yml`, `.github/workflows/x-daily-post.yml`.
-**The live site keeps serving v2.**
+`MANIFEST.txt` was deleted after verification — a transfer artifact, not repo
+content. `btc.csv` is gitignored.
 
----
+Untouched: `index.html`, `app.js`, `style.css`, `data.json`, `data.js`,
+`btc_risk_model_v2.py`, `functions/`, `lib/`, `bot/`, `db/`,
+`send-notifications.mjs`, `btc-risk-weekly.mjs`, and the three v2 workflows.
 
-## What is missing
+### Earlier open questions, now resolved by the drop
 
-Everything below is referenced by a committed file and was **not in the
-hand-off**. Nothing here has been reconstructed, stubbed or guessed.
-
-### 1. The model itself — `model/v3/`
-
-`etl/daily_v3.py` line 45 imports eight modules plus `constants`; the workflow
-additionally runs `python3 -m model.v3.validate` and
-`python3 -m pytest model/v3/tests`. None exist.
-
-| Module | Symbols the committed code calls | Documented in |
-|---|---|---|
-| `model/v3/constants.py` | `NEED_V3`, `SCHEMA_VERSION`, `BLEND_V`, `BLEND_G`; also `HALVING_DATES` (kept for charts, not an input — decision 7) | `docs/MODEL_v3.md` §2, §4 |
-| `model/v3/features.py` | `prepare_frame()`, `build_raw()` | §2, §4 |
-| `model/v3/growth.py` | `growth_params()`; `huber_fit_design()` | §4 (G) |
-| `model/v3/pillars.py` | `build_pillars()` | §4 |
-| `model/v3/compute.py` | `build_daily()`, `WEIGHTS` | §5 |
-| `model/v3/ensemble.py` | `ensemble_band()` | §6.1 |
-| `model/v3/growth_specs.py` | `all_residuals()`, `mapped_G()` | §6.2 |
-| `model/v3/outcome.py` | `forward_outcomes()`, `climatology()` | §6.3 |
-| `model/v3/rcap_alt.py` | `fetch_rcap_alt()`, `mvrv_alt()`, `alt_hash()`, `gap_report()`; `GAP_BAND_LOG` | §6.4 |
-| `model/v3/validate.py` | run as `__main__`; `DOCUMENTED_INVERSIONS`, `NAMED_CHECKS` | §7 |
-| `model/v3/tests/` | **111 tests** | — |
-| `model/v3/__init__.py` | package marker | — |
-
-### 2. P6 enforcement
-
-| Path | Referenced by |
-|---|---|
-| `tools/check_copy.py` | `CLAUDE.md` rule 5 and "Useful commands"; runbook step 5; decision 31 |
-| `.github/workflows/copy-audit.yml` | runbook step 1; decision 31 |
-
-Consequence: the **39 defect-G strings and 92 cutover-fatal strings** are still
-live on the site and **nothing is measuring them**. The runbook expects the copy
-audit to *fail* on this push — that expected-failure signal is absent because the
-check is absent.
-
-### 3. Series
-
-| Path | Note |
-|---|---|
-| `series/v2_frozen.json` | The frozen v2 tape, SHA-256 `0de9ddd6…67067c`, 2011-01-13 → 2026-09-10. Runbook step 1. |
-| `series/README.md` | Runbook step 1. |
-| `series/v3.0.jsonl` | **Must not be created here.** See below. |
-| `series/v3.0_last90.json` | Derived from the tape by the ETL. |
-
-### 4. Referenced documents
-
-| Path | Referenced by |
-|---|---|
-| `docs/AUDIT_v3.0.md` | `CLAUDE.md` rule 10 cites its §6 as maintained |
-| `docs/phase3_appendix.md` | decision 14 — the frozen window, horizon and sample for the nested baseline |
-| *BTC Risk Model — v2 Audit and v3 Design Roadmap* (11 Sep 2026) | the spec every `§` reference points at (§7.5 `conf`, §8.4 the P9 table, §9 operations, §12.1 the gates, §14 residual limits) |
-
-### 5. Staged Phase 5 frontend
-
-`v3.js`, the gauge, the band, the matrix caption and the exports are described as
-*"built and staged but deliberately unmerged"* (runbook §6). Not in the hand-off,
-and **correctly not committed** — the cutover is gated on closing defect G first.
+- **O1 — M's demotion.** Resolved. `series/README.md`: *"M was demoted on
+  2026-09-11 and its budget retired, not recycled."* `active_weight` 0.90 and
+  `retired_weight` 0.10 travel on every row. The constitution table in
+  `docs/CHANGELOG_v3.md` still lists the pre-demotion five-pillar weights and is
+  the one place a reader can still be misled.
+- **O2, O3, O4** — verifiable against the landed code; `docs/MODEL_v3.md` and
+  `docs/SCHEMA_v3.0.md` were written before it existed and have not yet been
+  re-checked against it line by line.
 
 ---
 
-## The tape is not here, and must not be invented
+## Next
 
-`docs/gate_report_v3.0.txt` is the output of a 5,191-row tape spanning
-**2012-03-07 → 2026-05-23**. That tape was not in the hand-off, and
-`docs/BOOTSTRAP_RUNBOOK.md` is explicit about why it must stay that way:
+Blocked on a decision for defect 1 before the daily job can ever append.
+Defect 2 wants a decision before the bootstrap.
 
-> Commit the **code only**. Do not create `series/v3.0.jsonl` by hand and do not
-> upload the `SAMPLE_*` files from the earlier hand-off: `--bootstrap` refuses to
-> run once the tape exists, and append-only means a truncated tape could never be
-> repaired.
+The frontend cutover (`index.html`, `app.js`), the three v2-reading backend
+consumers, the P6 copy rewrite and the README note are **not started**.
 
-So the gate report committed here is **evidence of a run that happened
-elsewhere**, not something reproducible from this repository today. The official
-tape end stays **2026-05-23**, the holdout stays **UNSIGNED**, and `2026-06-30`
-prints **`PENDING`**.
-
-**No sentence of the form "validated through 2026" may be written** *(decision 16)*.
-
----
-
-## What the committed workflow does today
-
-`.github/workflows/btc-data-v3.yml` is committed verbatim, cron `5 6 * * *`
-(06:05 UTC). With `model/v3/` absent it behaves like this:
-
-| Step | Outcome |
-|---|---|
-| checkout, setup-python, `pip install` | pass |
-| `python3 -m pytest model/v3/tests -q` | **fails** — no such directory |
-| *everything after it* | **never runs** — no compute, no append, no commit, no push |
-
-**This is safe.** The test step exists precisely so that *"a broken model must not
-write a row"*, and an absent model is the broadest possible break. There is no
-path by which this job can write a tape, and `--bootstrap` is not in the
-scheduled invocation regardless.
-
-**But it will fail once a day and email the maintainer**, and those are the same
-notifications that later carry *"refusing to push a rewrite"* and the stale-feed
-alerts. Training yourself to ignore this workflow's mail is a real cost.
-
-Two ways to stop the noise; **the choice is the maintainer's**, because the
-workflow is a verbatim hand-off artifact and editing it silently is worse than
-the noise *(`CLAUDE.md` rule 9: ask instead of picking)*:
-
-1. **Land `model/v3/`** and the noise ends by itself. Preferred.
-2. **Comment out the `schedule:` block**, leaving `workflow_dispatch` live, and
-   restore it in the same commit that lands `model/v3/`. Reversible, one line, and
-   it does not touch the guarantees — the dry run in runbook step 2 is a
-   `workflow_dispatch` anyway.
-
----
-
-## Open questions raised by reading the hand-off
-
-These are inconsistencies **within the committed material**. They are recorded
-rather than resolved, because resolving them means choosing, and
-`CLAUDE.md` rule 9 reserves that for the maintainer.
-
-### O1 — M's demotion is not in the decision log
-
-The constitution locked five pillars, **V 0.31 · G 0.24 · T 0.15 · M 0.10 ·
-Σ 0.20 = 1.00**. Four independent committed sources say M no longer votes:
-
-- `CLAUDE.md` rule 6 — *"T_dd's 0.0675 and M's 0.10 were removed, not recycled.
-  Active family weight is 0.90."*
-- `docs/gate_report_v3.0.txt` — collinearity and price-elasticity lines carry
-  **four** families (V, G, T, S).
-- `etl/daily_v3.py` — `"mctc_mod": opt("mctc_mod", 6)` is annotated
-  `# demoted: published, does not vote`, and the emitted row has no `M`.
-- decision 29's ensemble weight vectors all sum to **0.90**
-  (`0.225×4`; `0.25/0.2/0.15/0.3`).
-
-But the decision log committed here runs 0 → 32 and **contains no entry recording
-the demotion**, while the changelog's own header says a change to anything under
-*Constitution* is a new `schema_version` and a new tape file. Either an entry is
-missing from the hand-off, or the constitution table needs correcting — and
-`schema_version` should be checked against whichever it is. **This is the single
-most load-bearing ambiguity in the hand-off**, because the weight vector is the
-model.
-
-### O2 — the constitution's Output row is superseded but not struck
-
-The constitution still reads `risk01 = risk100/100` and
-`risk_lo/hi = risk100 ± round(10·s_t)`. Decision 18 replaced the first
-(`risk01 = F_exp(EMA(raw))`) and decision 20 the second (the image of the
-disagreement interval, because `10·s_t` *"can never exceed ±5, and measured ±1"*).
-A reader who stops at the constitution table gets both wrong.
-`docs/MODEL_v3.md` §5 and `docs/SCHEMA_v3.0.md` flag it; the changelog itself
-does not.
-
-### O3 — `thermo_stale_days` is computed but not emitted
-
-The constitution says it *"is stored on the row"*. `build_tape` joins it into
-`extras`, but `_row_to_json` emits `input_stale_days` only. **Resolve before the
-bootstrap**: the tape is append-only, so a field omitted on day one can never be
-added to the committed rows.
-
-### O4 — `docs/CHANGELOG_v3.md` still carries pre-rank baseline numbers
-
-Decision 14 reports the nested baseline as v3 **+0.0160**; decision 19 then
-records that the switch to ranks moved it to **−0.0562**, and
-`docs/gate_report_v3.0.txt` prints −0.0562. Decision 19 is explicit that it is
-withdrawing the earlier claim, so this is intended history rather than an error —
-but anyone quoting decision 14's table in isolation will quote a superseded
-number.
-
----
-
-## The one irreversible action
-
-`etl/daily_v3.py --bootstrap` founds the tape. It runs **once, ever**.
-
-**An agent must not run it** *(`CLAUDE.md`)*. Open the PR, run the dry run, report
-the row count and the gate report — then stop and let a human decide.
-
-The abort condition is stated in code and in the runbook: if the dry run reports
-**5,191 rows through 2026-05-23**, the API top-up failed silently and only the
-lagging CSV was read. Bootstrapping there would freeze a truncated tape
-**permanently**. Expected on a healthy run: **~5,300 rows**, ending yesterday or
-today.
-
----
-
-## Order of work from here
-
-1. **Land `model/v3/`** (11 modules + 111 tests), `tools/check_copy.py`,
-   `.github/workflows/copy-audit.yml`, `series/README.md`,
-   `series/v2_frozen.json`. Resolve **O1** while doing it.
-2. **`pytest model/v3/tests -q`** → 111 pass; **`python3 -m model.v3.validate`**
-   → reproduce `docs/gate_report_v3.0.txt`.
-3. **Runbook step 2** — dry run in Actions. Check the row count against §2's
-   table. **Stop if it is 5,191.**
-4. **Runbook step 3** — the maintainer, not an agent, bootstraps.
-5. **Runbook step 4** — sign the holdout. `2026-06-30` must stop printing
-   `PENDING`; if the June 2026 low does **not** land in the bottom quintile,
-   *that is a real finding about the model and must be recorded, not explained
-   away.*
-6. **Runbook step 5** — close defect G. **No waiver list; change the sentences.**
-7. **Runbook step 6** — only then the dashboard, and only after `v3.js` is
-   mapped through the `composite` grid.
+Current P6 state, for scale: `tools/check_copy.py` exits 1 with **39 defect-G
+strings** (hashrate 16, active addresses 11, difficulty 6, LTH/STH 4, implied
+probability 2) and **92 cutover-fatal strings** (eleven signals 29, logistic map
+17, Puell 15, MVRV-Z 9, RHODL 7, terminal price 7, five factor families 6,
+supply in profit 2).

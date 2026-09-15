@@ -1,3 +1,8 @@
 __pycache__/
 *.py[cod]
 .pytest_cache/
+
+# Coin Metrics CSV cache. NEVER commit: etl/daily_v3.py prefers a local btc.csv
+# over the live URL, so a committed snapshot silently freezes the daily job on
+# stale inputs -- which looks exactly like success in the log.
+btc.csv

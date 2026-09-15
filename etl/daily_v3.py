@@ -228,6 +228,13 @@ def build_tape(df_raw: pd.DataFrame, price_alt: bool = True,
     tape["clim_p_dd30_180"] = clim["p_dd"].reindex(tape.index)
     tape["clim_ret_p50_180"] = clim["p50"].reindex(tape.index)
 
+    # Composite grid on the rank's true reference set, for the window file.
+    global _COMPOSITE_GRID
+    _sm = compute.ema(compute.combine_raw(P, compute.WEIGHTS)).clip(0, 1).dropna()
+    if _sm.size >= 400:
+        _COMPOSITE_GRID = [round(float(v), 8) for v in
+                           np.quantile(_sm.to_numpy(), np.linspace(0, 1, 201))]
+
     tape["input_hash"] = [input_hash(df.loc[d]) for d in tape.index]
     tape["git_sha"] = os.environ.get("GITHUB_SHA", "local")
     # Second realized-cap construction: diagnostics only, never a vote, never a
@@ -420,6 +427,15 @@ def append_rows(tape: pd.DataFrame, path: Path = TAPE, bootstrap: bool = False,
     return rows
 
 
+# The composite quantile grid must be built from the SAME reference set the
+# published rank uses -- every day the composite exists, including the ~400
+# warm-up days that never reach the tape. Deriving it from the tape alone shifts
+# the browser's inversion by ~4.7 points against the gauge, which is two
+# different "current risk" objects on one page. build_tape stashes the true grid
+# here; map_support falls back to the tape only if it is absent.
+_COMPOSITE_GRID: list | None = None
+
+
 def map_support(tape_path: Path = TAPE, n_q: int = 201) -> dict:
     """Quantile grids of the raw series behind V, G and T, as of the last row.
 
@@ -458,11 +474,16 @@ def map_support(tape_path: Path = TAPE, n_q: int = 201) -> dict:
     # widget must map its inverted blend through the composite's own distribution.
     # Without this grid the browser would return blend-space numbers while the
     # gauge shows ranks -- three-current-risk-objects again, in a new costume.
-    comp = np.array([r["smooth01"] for r in rows if r.get("smooth01") is not None],
-                    dtype=float)
-    comp = comp[np.isfinite(comp)]
-    if comp.size >= 400:
-        out["composite"] = [round(float(v), 8) for v in np.quantile(comp, qs)]
+    if _COMPOSITE_GRID is not None:
+        out["composite"] = _COMPOSITE_GRID
+        out["composite_ref"] = "full causal composite history (matches the rank)"
+    else:
+        comp = np.array([r["smooth01"] for r in rows
+                         if r.get("smooth01") is not None], dtype=float)
+        comp = comp[np.isfinite(comp)]
+        if comp.size >= 400:
+            out["composite"] = [round(float(v), 8) for v in np.quantile(comp, qs)]
+            out["composite_ref"] = "published tape only (approximate)"
     last = rows[-1]
     # realized price = price / MVRV lets the browser recompute MVRV at a hypothetical
     # price without shipping realized cap; a, b give the growth path for G.

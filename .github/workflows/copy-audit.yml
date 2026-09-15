@@ -1,0 +1,43 @@
+# .github/workflows/copy-audit.yml
+#
+# P6 — "name only what you compute" — enforced on every change to the site.
+#
+# This is deliberately SEPARATE from btc-data-v3.yml. A copy defect must block a
+# deploy, never a row: the model recording what it saw this morning is not
+# contingent on the prose around it being finished. Wiring this into the tape job
+# would mean an unfinished sentence stops the append-only series, which is the
+# wrong failure mode entirely.
+#
+# It currently FAILS, and that is correct: 39 user-facing strings name hashrate,
+# difficulty, active addresses, long/short-term holder positioning and implied
+# crash probabilities, none of which any version of this model has ever computed.
+# That is defect G exactly as the audit found it, and it is open today — not at
+# the v3 cutover. A further 92 strings describe v2 machinery accurately and
+# become fatal the moment the gauge reads the v3 tape.
+#
+# Do not add a waiver list. The fix is to change the sentences.
+
+name: Copy audit (P6)
+
+on:
+  push:
+    paths: ["index.html", "app.js", "model/v3/constants.py", "tools/check_copy.py"]
+  pull_request:
+    paths: ["index.html", "app.js", "model/v3/constants.py", "tools/check_copy.py"]
+  workflow_dispatch:
+
+jobs:
+  p6:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Inventory (always runs, never fails — this is the cutover worklist)
+        run: python3 tools/check_copy.py --inventory
+
+      - name: Enforce P6
+        run: python3 tools/check_copy.py
