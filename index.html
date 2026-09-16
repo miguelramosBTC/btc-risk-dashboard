@@ -79,6 +79,10 @@
             </svg>
           </div>
           <div class="gauge-num" id="gNum">0.30</div>
+          <!-- v3 only: the committed row's disagreement band, and the intraday
+               trend overlay. Both stay hidden while the page serves v2. -->
+          <div class="gauge-band" id="gBand" hidden></div>
+          <div class="gauge-overlay" id="gOverlay" hidden></div>
         </div>
       </div>
 
@@ -145,6 +149,10 @@
           </div>
           <input type="range" class="mtx-range" id="mtxRange" min="0" max="1" step="0.01" value="0.30" aria-label="Risk level">
         </div>
+        <!-- v3 only: says exactly which families the inversion moves and which it
+             holds, so "valuation-implied price" is never read as a model inversion
+             of the whole score. Hidden while the page serves v2. -->
+        <div class="mtx-caption" id="mtxCaption" data-i18n="mtx_caption_v3" hidden></div>
       </div>
 
       <!-- 4 · risk-level notifications (Time / Price / Strategy based) -->
@@ -292,7 +300,7 @@
           <div>
             <div class="legend" style="margin:16px 2px 8px"><span data-i18n="sim_corr">Matriz de correlaci&oacute;n (fuente de Cholesky)</span></div>
             <div class="panel" style="padding:14px 14px 12px"><div id="simCorr"></div>
-              <div class="corr-cap" data-i18n="sim_corr_cap">Más oro = correlación más fuerte. Un choque de precio positivo arrastra al alza hashrate, direcciones y volumen on-chain.</div></div>
+              <div class="corr-cap" data-i18n="sim_corr_cap">Más oro = correlación más fuerte. Un choque de precio positivo arrastra al alza las tres series índice sintéticas que lo acompañan.</div></div>
           </div>
         </div>
       </div>
@@ -335,9 +343,9 @@
         <div class="eq">R(t) = &mu;(t)·&Delta;t + &sigma;·&radic;&Delta;t · Z,&nbsp;&nbsp;Z &sim; N(0, 1)<br>P<sub>t+&Delta;t</sub> = P<sub>t</sub> · exp( R(t) )</div>
 
         <h4 data-i18n="math_h4">4 · Choques on-chain correlacionados (Cholesky)</h4>
-        <p data-i18n="math_p5">El precio no evoluciona aislado: covaría con el hashrate, las direcciones activas y el volumen de transacciones. Dada la matriz de covarianza &Sigma;, su descomposición de Cholesky &Sigma; = L·Lᵀ permite generar choques gaussianos correlacionados a partir de ruido independiente:</p>
+        <p data-i18n="math_p5">El precio no evoluciona aislado. El simulador acompaña cada camino con tres series índice sintéticas (base 100) que sólo existen para mostrar la estructura de correlación; no son series on-chain medidas ni entran en el modelo de riesgo. Dada la matriz de covarianza &Sigma;, su descomposición de Cholesky &Sigma; = L·Lᵀ permite generar choques gaussianos correlacionados a partir de ruido independiente:</p>
         <div class="eq" data-i18n-html="eq_chol">&Sigma; = L · Lᵀ&nbsp;&nbsp;(L triangular inferior)<br>Z<sub>corr</sub> = L · Z<sub>indep</sub>,&nbsp;&nbsp;Z<sub>indep</sub> &sim; N(0, I)</div>
-        <p data-i18n="math_p6">El primer componente de Z<sub>corr</sub> impulsa el precio; los demás evolucionan las series on-chain preservando la dependencia observada. La diagonal de &Sigma; es 1, así que la correlación no altera la volatilidad marginal del precio.</p>
+        <p data-i18n="math_p6">El primer componente de Z<sub>corr</sub> impulsa el precio; los demás evolucionan las series índice sintéticas preservando la dependencia impuesta. La diagonal de &Sigma; es 1, así que la correlación no altera la volatilidad marginal del precio.</p>
 
         <h4 data-i18n="math_h5">5 · Parametrización por escenario</h4>
         <p data-i18n="math_p7">Cada régimen macro se obtiene modulando b (crecimiento), A&#8320; (amplitud del ciclo), &kappa; (velocidad de amortiguación) y &sigma; (volatilidad):</p>
@@ -368,13 +376,13 @@
     <details class="acc" open>
       <summary data-i18n="algo_sum1">Formulación matemática</summary>
       <div class="body">
-        <p data-i18n="algo_b1">Para cada día se calcula una función logística que lleva cada métrica a [0,1]:</p>
-        <div class="eq" data-i18n-html="eq_sig">sig(x; c, b) = 1 / (1 + e^(-(x-c)/b)),&nbsp;&nbsp;recortada a [0, 1]</div>
-        <p data-i18n="algo_b2">Once señales causales, agrupadas por factor:</p>
-        <div class="eq">s<sub>mayer</sub> = sig( P / SMA200(P) ; 1.60, 0.55 )&nbsp;&nbsp;trend · Mayer<br>s<sub>ath</sub> = ( min(P / ATH, 1) )<sup>1.5</sup>&nbsp;&nbsp;trend · drawdown<br>s<sub>mvrv</sub> = sig( MVRV ; 2.25, 0.90 )&nbsp;&nbsp;A · market vs realized<br>s<sub>mvrvz</sub> = sig( MVRV&#8209;Z ; 3.20, 1.60 )&nbsp;&nbsp;A · standardized<br>s<sub>sip</sub> = sig( supply&#8209;in&#8209;profit* ; 0.85, 0.10 )&nbsp;&nbsp;A · profit (proxy)<br>s<sub>term</sub> = sig( P / terminal&#8209;price* ; 2.10, 0.85 )&nbsp;&nbsp;A · ceiling (proxy)<br>s<sub>puell</sub> = sig( issuance$ / SMA365 ; 1.70, 0.95 )&nbsp;&nbsp;B · miner revenue<br>s<sub>mctc</sub> = sig( ln(Mcap/Thermocap) ; 2.40, 0.80 )&nbsp;&nbsp;C · security valuation<br>s<sub>mctc′</sub> = sig( Mcap/Thermo dev. ; 0.30, 0.85 )&nbsp;&nbsp;C · detrended (interp.)<br>s<sub>rhodl</sub> = sig( exch&#8209;inflow ratio* ; 0.45, 0.55 )&nbsp;&nbsp;D · holder behavior (proxy)<br>s<sub>fees</sub> = sig( fee$ ratio ; 0.35, 0.55 )&nbsp;&nbsp;E · network demand</div>
-        <p data-i18n="algo_b3">Se combinan con pesos por factor (renormalizados sobre las señales disponibles) y se suavizan con una media móvil exponencial corta:</p>
-        <div class="eq" data-i18n-html="eq_blend">raw = Σ w<sub>i</sub> · s<sub>i</sub><br>agrupadas en seis familias: tendencia de precio · A · B · C · D · E<br>Riesgo = EMA(span=3)(raw),&nbsp;&nbsp;α = 0.5,&nbsp;&nbsp;recortado a [0,1]</div>
-        <p data-i18n="algo_b4">La confianza (0-10) premia que las señales coincidan y que el riesgo sea extremo. Las señales con * son aproximaciones (proxy).</p>
+        <p data-i18n="algo_b1">Cada familia es un percentil de su propia serie cruda: la CDF empírica causal, calculada solo con la historia hasta esa mañana.</p>
+        <div class="eq" data-i18n-html="eq_cdf">F(x<sub>t</sub>) = ( #{ x<sub>s</sub> &le; x<sub>t</sub> } &minus; 0.5 ) / |W|,&nbsp;&nbsp;recortada a [0.001, 0.999]</div>
+        <p data-i18n="algo_b2">Cuatro familias causales con voto:</p>
+        <div class="eq">V = 0.65&middot;F<sub>exp</sub>(MVRV) + 0.35&middot;F<sub>4a</sub>(MVRV)&nbsp;&nbsp;valoraci&oacute;n&nbsp;&nbsp;w 0.31<br>G = 0.70&middot;F<sub>exp</sub>(g) + 0.30&middot;F<sub>4a</sub>(g),&nbsp;&nbsp;g<sub>t</sub> = log P<sub>t</sub> &minus; (a + b&middot;log d<sub>t</sub>)&nbsp;&nbsp;crecimiento&nbsp;&nbsp;w 0.24<br>&Sigma; = 0.40&middot;F<sub>exp</sub>(&sigma;30) + 0.60&middot;F<sub>exp</sub>(fragilidad),&nbsp;&nbsp;fragilidad = V&middot;(1 &minus; F<sub>exp</sub>(&kappa;))&nbsp;&nbsp;r&eacute;gimen de volatilidad&nbsp;&nbsp;w 0.20<br>T = F<sub>exp</sub>( P / SMA200(P) )&nbsp;&nbsp;tendencia&nbsp;&nbsp;w 0.15<br>&kappa; = &sigma;30 / &sigma;365 sobre rendimientos logar&iacute;tmicos diarios</div>
+        <p data-i18n="algo_b3">Se combinan con sus pesos, renormalizados sobre las familias vivas ese día, se suavizan con una media móvil exponencial, y el número publicado es el <b>rango causal</b> de esa mezcla suavizada:</p>
+        <div class="eq" data-i18n-html="eq_blend">mezcla = &Sigma; w<sub>i</sub>&middot;s<sub>i</sub> / &Sigma; w<sub>vivas</sub>&nbsp;&nbsp;(peso activo 0.90)<br>suave = EMA(span=8)(mezcla),&nbsp;&nbsp;&alpha; = 2/9<br>Riesgo = F<sub>exp</sub>(suave)&nbsp;&nbsp;&mdash; un rango, no la mezcla</div>
+        <p data-i18n="algo_b4">La banda es la imagen del intervalo de desacuerdo entre familias, [F(suave &minus; s), F(suave + s)], no «riesgo ± k». La confianza (0-10) combina cuántas familias están vivas y cuánto coinciden entre sí.</p>
       </div>
     </details>
   </div>
@@ -385,33 +393,24 @@
     <div class="sec-head">
       <h2 class="sec-h" data-i18n="nav_how">Cómo funciona</h2>
       <div class="sec-sub" data-i18n="comp_h">Componentes y normalización</div>
-      <p class="sec-d" data-i18n="comp_d">Cómo se mide y se mapea a 0–1 cada una de las once señales, y la metodología, los datos en vivo y los límites del índice.</p>
+      <p class="sec-d" data-i18n="comp_d">Cómo se mide y se mapea a 0–1 cada una de las cuatro familias con voto, y la metodología, los datos en vivo y los límites del índice.</p>
     </div>
     <details class="acc">
       <summary data-i18n="comp_sum">Qué mide cada señal y por qué</summary>
       <div class="body">
         <table class="tbl">
-          <tr><th data-i18n="comp_c1">Señal</th><th data-i18n="comp_c2">Mide</th><th data-i18n="comp_c3">Fuente</th><th class="map" data-i18n="comp_c4">Mapeo → [0,1]</th></tr>
-          <tr><td colspan="4" class="fgrp"><span data-i18n="fac_trend">Tendencia de precio</span></td></tr>
-          <tr><td>Mayer</td><td data-i18n="comp_mayer">Precio vs. media de 200 días</td><td><span class="src-pill price" data-i18n="src_price">price</span></td><td class="map">sig(·; 1.60, 0.55)</td></tr>
-          <tr><td data-i18n="comp_ath_n">Fracción ATH</td><td data-i18n="comp_ath">Cercanía al máximo histórico</td><td><span class="src-pill price" data-i18n="src_price">price</span></td><td class="map">(·)<sup>1.5</sup></td></tr>
-          <tr><td colspan="4" class="fgrp"><span data-i18n="fac_a">A · Valoración</span></td></tr>
-          <tr><td>MVRV</td><td data-i18n="comp_mvrv">Valor de mercado vs. valor realizado</td><td><span class="src-pill onchain" data-i18n="src_onchain">on-chain</span></td><td class="map">sig(·; 2.25, 0.90)</td></tr>
-          <tr><td>MVRV-Z</td><td data-i18n="comp_mvrvz">MVRV en desviaciones estándar (z-score)</td><td><span class="src-pill onchain" data-i18n="src_onchain">on-chain</span></td><td class="map">sig(·; 3.20, 1.60)</td></tr>
-          <tr><td data-i18n="comp_sip_n">Oferta en ganancia</td><td data-i18n="comp_sip">Parte de la oferta comprada por debajo del precio actual (proxy de coste base)</td><td><span class="src-pill proxy" data-i18n="src_proxy">proxy</span></td><td class="map">sig(·; 0.85, 0.10)</td></tr>
-          <tr><td data-i18n="comp_term_n">Precio terminal</td><td data-i18n="comp_term">Precio frente al techo de precio terminal (proxy)</td><td><span class="src-pill proxy" data-i18n="src_proxy">proxy</span></td><td class="map">sig(·; 2.10, 0.85)</td></tr>
-          <tr><td colspan="4" class="fgrp"><span data-i18n="fac_b">B · Mineros</span></td></tr>
-          <tr><td>Puell</td><td data-i18n="comp_puell">Ingresos de mineros vs. su media anual</td><td><span class="src-pill onchain" data-i18n="src_onchain">on-chain</span></td><td class="map">sig(·; 1.70, 0.95)</td></tr>
-          <tr><td colspan="4" class="fgrp"><span data-i18n="fac_c">C · Valoración por seguridad</span></td></tr>
-          <tr><td>Mcap/Thermocap</td><td data-i18n="comp_mctc">Capitalización frente al gasto acumulado en seguridad</td><td><span class="src-pill onchain" data-i18n="src_onchain">on-chain</span></td><td class="map">sig(ln·; 2.40, 0.80)</td></tr>
-          <tr><td>mCTC</td><td data-i18n="comp_mctcmod">Mcap/Thermocap como desviación de su tendencia (interpretada)</td><td><span class="src-pill interp" data-i18n="src_interp">interpr.</span></td><td class="map">sig(dev; 0.30, 0.85)</td></tr>
-          <tr><td colspan="4" class="fgrp"><span data-i18n="fac_d">D · Comportamiento de holders</span></td></tr>
-          <tr><td>RHODL</td><td data-i18n="comp_rhodl">Entradas a exchanges como proxy de comportamiento (RHODL requiere datos por antigüedad)</td><td><span class="src-pill proxy" data-i18n="src_proxy">proxy</span></td><td class="map">sig(·; 0.45, 0.55)</td></tr>
-          <tr><td colspan="4" class="fgrp"><span data-i18n="fac_e">E · Demanda de red</span></td></tr>
-          <tr><td data-i18n="comp_fees_n">Comisiones</td><td data-i18n="comp_fees">Comisiones de transacción frente a su media anual (suavizadas)</td><td><span class="src-pill onchain" data-i18n="src_onchain">on-chain</span></td><td class="map">sig(·; 0.35, 0.55)</td></tr>
+          <tr><th data-i18n="comp_c1">Familia</th><th data-i18n="comp_c2">Mide</th><th data-i18n="comp_c3">Fuente</th><th class="map" data-i18n="comp_c4">Mapeo → [0,1]</th><th class="map" data-i18n="comp_c5">Peso</th></tr>
+          <tr><td colspan="5" class="fgrp"><span data-i18n="fac_vote">Familias con voto — peso activo 0.90</span></td></tr>
+          <tr><td>V</td><td data-i18n="comp_mvrv">Valor de mercado frente a valor realizado (MVRV)</td><td><span class="src-pill onchain" data-i18n="src_onchain">on-chain</span></td><td class="map">0.65·F<sub>exp</sub> + 0.35·F<sub>4a</sub></td><td class="map">0.31</td></tr>
+          <tr><td>G</td><td data-i18n="comp_logdev">Precio frente a un ajuste robusto de ley de potencia sobre días desde el génesis</td><td><span class="src-pill price" data-i18n="src_price">precio</span></td><td class="map">0.70·F<sub>exp</sub> + 0.30·F<sub>4a</sub></td><td class="map">0.24</td></tr>
+          <tr><td>Σ</td><td data-i18n="comp_vol">Volatilidad realizada a 30 y 365 días y su cociente (compresión)</td><td><span class="src-pill price" data-i18n="src_price">precio</span></td><td class="map">0.40·F<sub>exp</sub>(σ30) + 0.60·F<sub>exp</sub>(fragilidad)</td><td class="map">0.20</td></tr>
+          <tr><td>T</td><td data-i18n="comp_mayer">Múltiplo de Mayer: precio frente a su media de 200 días</td><td><span class="src-pill price" data-i18n="src_price">precio</span></td><td class="map">F<sub>exp</sub></td><td class="map">0.15</td></tr>
+          <tr><td colspan="5" class="fgrp"><span data-i18n="fac_dark">Publicadas en la fila, sin voto — peso retirado 0.10</span></td></tr>
+          <tr><td>M</td><td data-i18n="comp_mctc">Capitalización frente al gasto acumulado en seguridad (thermocap), destendenciada</td><td><span class="src-pill onchain" data-i18n="src_onchain">on-chain</span></td><td class="map" data-i18n="comp_nomap">publicada, no vota</td><td class="map">0.00</td></tr>
+          <tr><td>F</td><td data-i18n="comp_flow">Comportamiento de tenedores: no existe serie pública gratuita con respaldo, así que está apagada y documentada</td><td><span class="src-pill proxy" data-i18n="src_none">ninguna</span></td><td class="map" data-i18n="comp_nomap">publicada, no vota</td><td class="map">0.00</td></tr>
         </table>
-        <p data-i18n-html="comp_b1"><b>Clave del diseño:</b> cada transformación está anclada a un nivel absoluto, no a un percentil móvil. Así, a medida que Bitcoin madura y cada pico de valoración es menor que el anterior, los picos de riesgo también se comprimen — algo que un re-escalado por percentiles borraría.</p>
-        <p data-i18n-html="comp_b2"><b>Señales proxy (*):</b> cuatro señales de ITC — oferta en ganancia, precio terminal, mCTC y RHODL — requieren datos por antigüedad de monedas (Glassnode) que el feed de Coin Metrics no incluye. Se implementan como aproximaciones transparentes a partir de datos disponibles y con peso bajo, de modo que el score central lo sigan dominando las cinco señales reales (MVRV, MVRV-Z, Puell, Mcap/Thermocap y comisiones).</p>
+        <p data-i18n-html="comp_b1"><b>Clave del diseño:</b> cada familia es un percentil de su propia historia causal, nunca un umbral absoluto. Por eso una fila publicada jamás se reescribe: las CDF se expanden, así que recalcular hoy movería el rango de 2017.</p>
+        <p data-i18n-html="comp_b2"><b>Un factor dominante más un modificador de volatilidad.</b> No es un modelo multifactor y no debe describirse así: el rango efectivo es 1.59 sobre 4 y el 78 % de la varianza está en una sola componente. Bitcoin tiene un ciclo y toda métrica de valoración es una vista de ese ciclo. Entradas, solo Coin Metrics community: PriceUSD, CapMVRVCur, CapMrktCurUSD, SplyCur, IssTotUSD, IssTotNtv, FeeTotNtv.</p>
       </div>
     </details>
   </div>
@@ -704,6 +703,11 @@
   </div>
 </footer>
 <script src="/data.js"></script>
-<script src="/app.js?v=14"></script>
+<!-- v3 data layer. Must load BEFORE app.js: it defines the global V3 that app.js
+     reads the official score from. It self-loads /series/v3.0_last90.json and
+     leaves V3.active false if that file is missing, malformed or stale, in which
+     case app.js keeps serving v2 exactly as before. -->
+<script src="/v3.js?v=1"></script>
+<script src="/app.js?v=15"></script>
 </body>
 </html>

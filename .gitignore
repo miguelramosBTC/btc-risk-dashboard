@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+node_modules/
+
+# Fonts the X bot gauge renderer downloads at runtime.
+bot/.fonts/
+
+# Coin Metrics CSV cache. NEVER commit: a stray snapshot must not be mistaken
+# for production input. (etl/daily_v3.py now defaults to the live dump and only
+# reads a local CSV when one is passed by name, but there is still no reason to
+# ship 2.4 MB of duplicated vendor data.)
+btc.csv

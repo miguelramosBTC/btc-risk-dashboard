@@ -23,11 +23,26 @@ def check(name, cond, detail=""):
 
 # ---- 1. neutral levels (no recommendations anywhere) ------------------------
 print("[1] neutral level words + emoji")
+# v3: the model's own quintile vocabulary. Re-cut from v2's 0.30/0.60/0.80
+# because on the rank scale 0.60 is the MEDIAN — "ELEVATED" would have covered
+# 44% of days and "HIGH" 30%.
+for r, lvl, em in ((0.05, "BOTTOM QUINTILE", "🟢"), (0.1999, "BOTTOM QUINTILE", "🟢"),
+                   (0.20, "BELOW MID", "🔵"), (0.5999, "BELOW MID", "🔵"),
+                   (0.60, "ABOVE MID", "🟠"), (0.7999, "ABOVE MID", "🟠"),
+                   (0.80, "TOP QUINTILE", "🔴"), (1.0, "TOP QUINTILE", "🔴")):
+    check(f"v3 r={r}", bot.level_word(r) == lvl and bot.level_emoji(r) == em,
+          f"{bot.level_word(r)}/{bot.level_emoji(r)}")
+# v2's own bands survive for the fallback path, and must keep describing v2.
 for r, lvl, em in ((0.05, "LOW", "🟢"), (0.2999, "LOW", "🟢"), (0.30, "MODERATE", "🟡"),
                    (0.5999, "MODERATE", "🟡"), (0.60, "ELEVATED", "🟠"),
                    (0.7999, "ELEVATED", "🟠"), (0.80, "HIGH", "🔴"), (1.0, "HIGH", "🔴")):
-    check(f"r={r}", bot.level_word(r) == lvl and bot.level_emoji(r) == em,
-          f"{bot.level_word(r)}/{bot.level_emoji(r)}")
+    check(f"v2 r={r}", bot.level_word(r, "v2") == lvl and bot.level_emoji(r, "v2") == em,
+          f"{bot.level_word(r, 'v2')}/{bot.level_emoji(r, 'v2')}")
+# The percentile sentence is true only of v3; v2's number is a blend, not a rank.
+check("meaning_line is v3-only",
+      "more extended than 41%" in bot.meaning_line(0.41, "2026-03-14", "v3")
+      and "more extended" not in bot.meaning_line(0.41, "2026-03-14", "v2"),
+      bot.meaning_line(0.41, "2026-03-14", "v2"))
 banned = ("ACCUMULATE", "DISTRIBUTE", "HOLD", "base", "stack", "Buy", "Sell")
 hdr = "\n".join(bot.header_lines(0.28, "2026-07-06", "Lower than 78% of the last 365 days"))
 check("header carries no regime/advice words",
@@ -37,7 +52,10 @@ check("header carries no regime/advice words",
 print("[2] history_line (365d)")
 rs = [0.50] * 400 + [0.20] * 60 + [0.35]           # 0.35: above last 60, below the 400 before
 h = bot.history_line(rs, 0.35)
-check("365d percentile phrasing", "last 365 days" in h and h.startswith(("Higher", "Lower")), h)
+# Both reference sets must be named. The score is ITSELF a percentile of all
+# history, so a bare second percentage against a 365-day window read as a
+# contradiction ("0.41 — higher than 58%").
+check("365d clause names its own window", "last 365 days" in h and h.startswith("and"), h)
 rs = [0.30] * 400 + [0.61]
 check("long streak → highest-in-N", bot.history_line(rs, 0.61) == "Highest reading in 365 days",
       bot.history_line(rs, 0.61))
@@ -109,7 +127,7 @@ check("tags land on header line 1", hdr_tagged.endswith("$BTC #Fed"), hdr_tagged
 print("[5] assembly")
 body = "Hook line.\n\nParagraph one about the thing.\n\nCloser."
 full = bot.build_long(0.28, "2026-07-06", "Lower than 78% of the last 365 days", body)
-check("long: header first", full.startswith("🟢 BTC Risk 0.28 — LOW"))
+check("long: header first", full.startswith("🔵 BTC Risk 0.28 — BELOW MID"), full[:40])
 check("long: 365 line + as-of", "last 365 days · as of Jul 6" in full)
 check("long: footer last", full.rstrip().endswith("full model → link in bio"))
 short = bot.build_short(0.91, "2026-07-06", "Highest reading in 365 days",
@@ -208,7 +226,7 @@ check("thread produced ≥2 tweets", len(tw) >= 2, str(len(tw)))
 check("thread ≤ max_tweets", len(tw) <= 8, str(len(tw)))
 check("every tweet ≤280 weighted", all(bot.x_len(t) <= 280 for t in tw),
       str([bot.x_len(t) for t in tw]))
-check("tweet 1 starts with risk header", tw[0].startswith("🟢 BTC Risk 0.28 — LOW"))
+check("tweet 1 starts with risk header", tw[0].startswith("🔵 BTC Risk 0.28 — BELOW MID"), tw[0][:40])
 check("footer present in last tweet", "not financial advice" in tw[-1])
 check("numbering i/N present", all(f"/{len(tw)}" in t for t in tw))
 check("no advice words across thread", not any(w in " ".join(tw)

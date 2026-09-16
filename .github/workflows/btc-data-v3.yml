@@ -1,0 +1,111 @@
+# .github/workflows/btc-data-v3.yml
+#
+# Daily v3.0 tape. Runs BESIDE btc-data.yml, which keeps producing v2's
+# data.json / data.js for the live site. This job never writes data.json,
+# data.js, index.html or app.js: until the Phase 5 cutover the dashboard, the
+# API, the email engine and the X bot all still read v2.
+#
+# What it commits: series/v3.0.jsonl (append-only) and series/v3.0_last90.json.
+#
+# Schedule (UTC), per the roadmap §10:
+#   06:00  pull Coin Metrics community CSV + API top-up
+#   06:10  compute, asserting no future timestamps
+#   06:20  append TODAY'S ROW ONLY; committed rows are never rewritten
+#   07:00  health check — a jump, a stale feed or a dark family alerts a human
+#
+# Steps 06:00-06:20 are one python process (etl/daily_v3.py); splitting them
+# would mean computing twice, and with expanding CDFs two computations minutes
+# apart are not guaranteed to see the same input vintage.
+#
+# The 06:30 Pages rebuild in the roadmap is deliberately NOT here: Cloudflare
+# rebuilds on push, and nothing on the live site reads v3 yet.
+
+name: Refresh v3 risk tape (daily)
+
+on:
+  schedule:
+    - cron: "5 6 * * *"          # 06:05 UTC — after the v2 job at 06:00
+  workflow_dispatch:
+    inputs:
+      bootstrap:
+        description: "Write the full history once. Refuses if the tape exists."
+        type: boolean
+        default: false
+      with_rcap_alt:
+        description: "Fetch the second realized-cap construction (diagnostics only)."
+        type: boolean
+        default: false
+      dry_run:
+        description: "Compute and report, write nothing."
+        type: boolean
+        default: false
+
+permissions:
+  contents: write                # commits series/*.jsonl only
+
+concurrency:
+  group: btc-data-v3             # never two appenders on one tape
+  cancel-in-progress: false
+
+jobs:
+  tape:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deps
+        run: pip install -r requirements.txt pytest
+
+      - name: Unit tests (a broken model must not write a row)
+        run: python3 -m pytest model/v3/tests -q
+
+      - name: Compute and append
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          python3 etl/daily_v3.py \
+            ${{ inputs.bootstrap && '--bootstrap' || '' }} \
+            ${{ inputs.dry_run && '--dry-run' || '' }} \
+            ${{ inputs.with_rcap_alt && '--with-rcap-alt' || '' }}
+
+      - name: Ship gates (report only; does not block the append)
+        continue-on-error: true
+        run: python3 -m model.v3.validate
+
+      - name: Commit the tape
+        if: ${{ !inputs.dry_run }}
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add series/v3.0.jsonl series/v3.0_last90.json
+          if git diff --staged --quiet; then
+            echo "No new v3 row today."
+          else
+            # Guard: the diff against the committed tape must be additions only.
+            # If a line was removed or changed, history is being rewritten and
+            # this job must stop rather than publish the rewrite.
+            if git diff --staged --numstat -- series/v3.0.jsonl \
+               | awk '{ if ($2 != 0) { print "deleted lines: " $2; exit 1 } }'; then
+              git commit -m "v3: daily tape append ($(date -u +%F))"
+              git push
+            else
+              echo "::error::v3.0.jsonl lost lines — refusing to push a rewrite."
+              exit 1
+            fi
+          fi
+
+      - name: Health check
+        # Runs AFTER the commit on purpose. A stale feed or a 12-point jump must
+        # raise a human-readable alert, never cost us the committed row.
+        run: python3 etl/daily_v3.py --health-only
+
+      - name: Surface health failures
+        if: failure()
+        run: |
+          echo "::warning::v3 health check failed. Investigate a data hole or a" \
+               "stale Coin Metrics field. Do NOT rewrite the tape, do NOT refit," \
+               "do NOT change a weight. A version bump is the only legal fix."
