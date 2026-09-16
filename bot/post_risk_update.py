@@ -66,6 +66,9 @@ import requests
 #  CONFIG
 # --------------------------------------------------------------------------- #
 DEFAULT_DATA_URL = "https://bitcoinrisk.net/data.json"
+DEFAULT_TAPE_PATH = "series/v3.0.jsonl"
+DEFAULT_WINDOW_URL = "https://bitcoinrisk.net/series/v3.0_last90.json"
+MAX_STALE_DAYS = 4          # older than this and the v3 row is not "current"
 DEFAULT_LLM_BASE = "https://api.x.ai/v1"
 DEFAULT_LLM_MODEL = "grok-4.3"
 DEFAULT_FEEDS = [
@@ -90,18 +93,49 @@ def env(name, default=""):
 #  multipliers are intentionally NOT shown (change #1). The NUMBER still
 #  matches the dashboard exactly.
 # --------------------------------------------------------------------------- #
-def level_word(r: float) -> str:
-    if r < 0.30: return "LOW"
-    if r < 0.60: return "MODERATE"
-    if r < 0.80: return "ELEVATED"
-    return "HIGH"
+def level_word(r: float, model: str = "v3") -> str:
+    """Descriptive only, and re-cut for the rank scale.
+
+    v2's LOW/MODERATE/ELEVATED/HIGH sat at 0.30/0.60/0.80. On the v3 rank those
+    cuts are wrong in a way that matters: 0.60 is the MEDIAN, so "ELEVATED"
+    would cover 44% of days and "HIGH" 30%. The v3 wording is the model's own
+    quintile vocabulary -- the same language the reach and bottom gates use --
+    because the score is a percentile and the honest label describes extension,
+    not danger. Shares of the 5,191-row tape are in the comments.
+    """
+    if model == "v2":
+        if r < 0.30: return "LOW"
+        if r < 0.60: return "MODERATE"
+        if r < 0.80: return "ELEVATED"
+        return "HIGH"
+    if r < 0.20: return "BOTTOM QUINTILE"   # 12% of days
+    if r < 0.60: return "BELOW MID"         # 30%
+    if r < 0.80: return "ABOVE MID"         # 28%
+    return "TOP QUINTILE"                   # 30%
 
 
-def level_emoji(r: float) -> str:
-    if r < 0.30: return "🟢"
-    if r < 0.60: return "🟡"
+def level_emoji(r: float, model: str = "v3") -> str:
+    if model == "v2":
+        if r < 0.30: return "🟢"
+        if r < 0.60: return "🟡"
+        if r < 0.80: return "🟠"
+        return "🔴"
+    if r < 0.20: return "🟢"
+    if r < 0.60: return "🔵"
     if r < 0.80: return "🟠"
     return "🔴"
+
+
+def meaning_line(r: float, date: str, model: str) -> str:
+    """What the number means, in the number's own words.
+
+    True ONLY of v3: v2's score is a blend of percentiles, not a percentile, so
+    claiming "more extended than X% of its history" about a v2 reading would be
+    the same false claim the v3 rank change was made to fix.
+    """
+    if model == "v2":
+        return f"v2 blended score for {date}"
+    return f"more extended than {round(r * 100)}% of its history to {date}"
 
 
 # --------------------------------------------------------------------------- #
@@ -128,6 +162,54 @@ def load_data() -> dict:
     r = requests.get(url, timeout=20, headers={"cache-control": "no-store"})
     r.raise_for_status()
     return r.json()
+
+
+def load_v3_row() -> tuple:
+    """The committed v3 row: the last line of the append-only tape.
+
+    Returns (row, reason). A row of None means the caller must fall back to v2
+    AND say so -- serving a v2 number silently, on a scale where 0.80 means
+    something else entirely, is the failure this path exists to prevent.
+    """
+    cands = []
+    if env("TAPE_FILE"):
+        cands.append(env("TAPE_FILE"))
+    if env("GITHUB_WORKSPACE"):
+        cands.append(os.path.join(env("GITHUB_WORKSPACE"), DEFAULT_TAPE_PATH))
+    cands += [DEFAULT_TAPE_PATH,
+              os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", DEFAULT_TAPE_PATH)]
+    row, tried = None, []
+    for p in cands:
+        try:
+            with open(p, "r", encoding="utf-8") as f:
+                lines = [ln for ln in f if ln.strip()]
+            if not lines:
+                tried.append(f"{p}:empty"); continue
+            row = json.loads(lines[-1])
+            print(f"[data] v3 committed row from {p}")
+            break
+        except Exception as e:
+            tried.append(f"{p}:{e.__class__.__name__}")
+    if row is None:
+        # no local checkout -- the published window carries the same rows verbatim
+        try:
+            url = env("WINDOW_URL", DEFAULT_WINDOW_URL)
+            r = requests.get(url, timeout=20, headers={"cache-control": "no-store"})
+            r.raise_for_status()
+            rows = (r.json() or {}).get("rows") or []
+            if rows:
+                row = rows[-1]
+                print(f"[data] v3 committed row from {url}")
+        except Exception as e:
+            tried.append(f"window:{e.__class__.__name__}")
+    if row is None:
+        return None, f"v3 tape unavailable ({'; '.join(tried)})"
+    if not isinstance(row.get("risk01"), (int, float)) or not row.get("asof_date"):
+        return None, "last v3 row is missing risk01 or asof_date"
+    lag = staleness_days(str(row["asof_date"]))
+    if lag > MAX_STALE_DAYS:
+        return None, f"v3 tape is {lag} days behind ({row['asof_date']}), limit {MAX_STALE_DAYS}"
+    return row, None
 
 
 def validate_data(d: dict) -> dict:
@@ -169,9 +251,12 @@ def history_line(rs: list, current: float) -> str:
     below = sum(1 for v in window if v < current)
     p = round(100 * below / len(window))
     span = "365" if len(window) >= 365 else str(len(window))
+    # Both reference sets are named on purpose. The score is ITSELF a percentile
+    # -- of all history to date -- so printing a bare second percentage against a
+    # 365-day window read like a contradiction ("0.41 - higher than 58%").
     if p >= 50:
-        return f"Higher than {p}% of the last {span} days"
-    return f"Lower than {100 - p}% of the last {span} days"
+        return f"and than {p}% of the last {span} days"
+    return f"and lower than {100 - p}% of the last {span} days"
 
 
 # --------------------------------------------------------------------------- #
@@ -248,12 +333,15 @@ Hard rules:
   violence; nothing about private individuals.
 - ABSOLUTELY NO investment advice: no buy/sell/hold, no "accumulate", no DCA
   or leverage suggestions, no price predictions, no "time to". Describe the
-  risk reading and its percentile factually — nothing more.
+  risk reading factually — nothing more. The reading is a PERCENTILE RANK of
+  Bitcoin's own history, not a probability and not a forecast: never write that
+  it predicts a crash, a top, a bottom or a price. "More extended than X% of its
+  history" is the only framing. A high reading is common, not an alarm.
 - No hashtags. No @ symbols (write names plainly). No links or URLs. No
   emojis. No markdown formatting. No "Sources:" section.
 - One story per post. If the day is truly dead, satirize the silence itself."""
 
-LONG_FEWSHOT_USER = """Risk: 0.41 (MODERATE) — Higher than 58% of the last 365 days
+LONG_FEWSHOT_USER = """Risk: 0.41 (BELOW MID) — more extended than 41% of its history to 2026-03-14 and than 58% of the last 365 days
 Date: 2026-03-14
 Headlines:
 - EU finance ministers advance plan requiring traceability for all transfers above €200 (Reuters) :: Draft framework would extend reporting duties to self-custody wallets; final vote expected in June.
@@ -268,7 +356,7 @@ The stated goal is fighting crime. The historical record of financial surveillan
 
 Meanwhile, the asset they cannot trace by committee just posted its strongest ETF inflows in three weeks, per CoinDesk. That's the quiet part: while one system was designing new permission slips, capital was flowing into the one that doesn't issue them. Bitcoin doesn't care who chairs the working group. There is no threshold to lower, because there is no one with the authority to lower it.
 
-For the record-keepers: the model reads 0.41 today — MODERATE, higher than 58% of the last 365 days. Not a signal, not advice. Just a number nobody can vote on.
+For the record-keepers: the model reads 0.41 today — below mid, more extended than 41% of its own history. Not a signal, not a forecast. Just a number nobody can vote on.
 
 They can trace two hundred euros. They still can't print a single sat."""
 
@@ -503,8 +591,8 @@ def compose_tags(context_text: str, today: dt.date) -> str:
     return " ".join(out[:cap])
 
 
-def header_lines(risk, ddate, hist, tags=""):
-    l1 = f"{level_emoji(risk)} BTC Risk {risk:.2f} — {level_word(risk)}"
+def header_lines(risk, ddate, hist, tags="", model="v3"):
+    l1 = f"{level_emoji(risk, model)} BTC Risk {risk:.2f} — {level_word(risk, model)}"
     if tags:
         l1 = f"{l1} {tags}"
     return (l1, f"📊 {hist} · as of {fmt_day(ddate)}")
@@ -513,8 +601,8 @@ def header_lines(risk, ddate, hist, tags=""):
 FOOTER = "not financial advice · full model → link in bio"
 
 
-def build_short(risk, ddate, hist, today, tags="") -> str:
-    l1, l2 = header_lines(risk, ddate, hist, tags)
+def build_short(risk, ddate, hist, today, tags="", model="v3") -> str:
+    l1, l2 = header_lines(risk, ddate, hist, tags, model)
     humor = FALLBACK_HUMOR[today.timetuple().tm_yday % len(FALLBACK_HUMOR)]
     for parts in ((l1, l2, humor, FOOTER), (l1, l2, FOOTER), (l1, FOOTER), (l1,)):
         t = "\n".join(parts)
@@ -523,8 +611,8 @@ def build_short(risk, ddate, hist, today, tags="") -> str:
     return l1
 
 
-def build_long(risk, ddate, hist, body, tags="") -> str:
-    l1, l2 = header_lines(risk, ddate, hist, tags)
+def build_long(risk, ddate, hist, body, tags="", model="v3") -> str:
+    l1, l2 = header_lines(risk, ddate, hist, tags, model)
     return f"{l1}\n{l2}\n\n{body}\n\n{FOOTER}"
 
 
@@ -814,12 +902,29 @@ def main() -> int:
     print(f"[bot] {today.isoformat()} UTC — mode {mode.upper()} — "
           f"{'DRY-RUN' if dry else 'LIVE'}")
 
+    # v3 first: the committed row. The 365-day history series still comes from
+    # v2's data.json, because the v3 tape is not founded yet and its published
+    # window carries only 90 days -- history_line needs a year. Both reference
+    # sets are named in the copy so the two can never be read as one number.
+    v3_row, v3_reason = load_v3_row()
     try:
         data = validate_data(load_data())
     except Exception as e:
         print(f"[bot] FATAL: cannot load canonical data: {e}")
         return 1
-    risk, ddate = data["risk"], data["date"]
+
+    if v3_row is not None:
+        model = "v3"
+        risk, ddate = float(v3_row["risk01"]), str(v3_row["asof_date"])
+        print(f"[bot] model=v3 schema={v3_row.get('schema_version', 'v3.0')} "
+              f"risk={risk:.4f} risk100={v3_row.get('risk100')} asof={ddate}")
+    else:
+        model = "v2"
+        risk, ddate = data["risk"], data["date"]
+        # Say it in the log AND in the post: the scales are not comparable.
+        print(f"[bot] FALLBACK to v2: {v3_reason}")
+        print(f"[bot] model=v2 risk={risk:.4f} lastDate={ddate}")
+
     stale = staleness_days(ddate)
     print(f"[bot] risk={risk:.4f} lastDate={ddate} (staleness {stale}d; 1d normal)")
     if stale > int(env("MAX_STALE_DAYS", "3")):
@@ -829,8 +934,10 @@ def main() -> int:
             print("[bot] FATAL: refusing to post stale numbers")
             return 1
 
-    level = level_word(risk)
-    hist = history_line(data["r"], risk)
+    level = level_word(risk, model)
+    # "more extended than X% of its history to DATE" + "and than Y% of the last
+    # 365 days" -- two reference sets, each named.
+    hist = f"{meaning_line(risk, ddate, model)} {history_line(data['r'], risk)}".strip()
 
     # ---- generate body + assemble ------------------------------------------
     # fmt: text (single post) OR thread (list of posts). Exactly one is set.
@@ -847,7 +954,7 @@ def main() -> int:
                 print("[bot] FATAL: URL/domain in generated body — aborting")
                 return 1
             tags = compose_tags(body, today)
-            l1, l2 = header_lines(risk, ddate, hist, tags)
+            l1, l2 = header_lines(risk, ddate, hist, tags, model)
             thread = build_thread_tweets(f"{l1}\n{l2}", body, FOOTER, max_tweets)
             fmt = "thread"
         else:
@@ -858,13 +965,13 @@ def main() -> int:
         max_w = int(env("LONG_MAX_WORDS", "750"))
         body, used_llm = generate_body(risk, level, hist, ddate, today, min_w, max_w)
         if body:
-            text = build_long(risk, ddate, hist, body, compose_tags(body, today))
+            text = build_long(risk, ddate, hist, body, compose_tags(body, today), model)
             fmt = "long"
         else:
             print("[llm] long unusable — degrading to short single post")
 
     if not text and not thread:                    # short mode, or any degrade
-        text = build_short(risk, ddate, hist, today, compose_tags("", today))
+        text = build_short(risk, ddate, hist, today, compose_tags("", today), model)
         fmt = "short"
 
     # URL guard on the final post TEXT (single) — image text is exempt & free
@@ -939,7 +1046,7 @@ def main() -> int:
 
     ok, retry_short = post_tweet(text, media_id)
     if retry_short:                                # long post + no Premium
-        text = build_short(risk, ddate, hist, today, compose_tags("", today))
+        text = build_short(risk, ddate, hist, today, compose_tags("", today), model)
         extra["format"] = "short (Premium fallback)"
         ok, _ = post_tweet(text, media_id)
     write_summary("POSTED" if ok else "POST FAILED", text, extra)
