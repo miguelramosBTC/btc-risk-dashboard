@@ -73,6 +73,12 @@ const I18N = {
   chart_eye:"Histórico en vivo", chart_h:"Precio y riesgo desde 2011",
   chart_d:"Precio de Bitcoin (escala logarítmica) y el score de riesgo 0-1. Se actualiza con el precio en vivo.",
   chart_refresh:"↻ Actualizar precio", chart_auto:"Auto (5 min)", leg_price:"Precio", leg_risk:"Riesgo",
+  /* v3 chart: la escala cambió. 0-100 es un percentil de su propia historia,
+     no el score 0-1 de v2 y nunca una probabilidad. */
+  chart_h_v3:"Precio y extensión desde 2012",
+  chart_d_v3:"Precio de Bitcoin (escala logarítmica) y la lectura publicada de 0 a 100: el percentil de lo extendido que estaba el mercado frente a su propia historia hasta esa mañana. La línea de extensión termina en la última fila publicada; el precio sigue en vivo.",
+  leg_risk_v3:"Extensión (0-100)",
+  chart_y2_v3:"Extensión", chart_y2_v2:"Riesgo", chart_tip_v3:"Extensión",
   rng_all:"Todo", rng_10y:"10A", rng_5y:"5A", rng_3y:"3A", rng_1y:"1A", rng_6m:"6M", rng_3m:"3M",
   trust_open:"Modelo abierto y transparente", trust_data:"Solo datos públicos (Coin Metrics)", trust_advice:"Nunca es asesoramiento financiero",
   bt_eye:"Pruébalo tú mismo", bt_h:"Backtest interactivo (2014 → hoy)",
@@ -313,6 +319,12 @@ const I18N = {
   chart_eye:"Live history", chart_h:"Price and risk since 2011",
   chart_d:"Bitcoin price (log scale) and the 0-1 risk score. Updates with the live price.",
   chart_refresh:"↻ Refresh price", chart_auto:"Auto (5 min)", leg_price:"Price", leg_risk:"Risk",
+  /* v3 chart: the scale changed. 0-100 is a percentile of its own history, not
+     v2's 0-1 score, and never a probability. */
+  chart_h_v3:"Price and extension since 2012",
+  chart_d_v3:"Bitcoin price (log scale) and the published 0-100 reading: the percentile of how extended the market was versus its own history up to that morning. The extension line ends at the last published row; the price stays live.",
+  leg_risk_v3:"Extension (0-100)",
+  chart_y2_v3:"Extension", chart_y2_v2:"Risk", chart_tip_v3:"Extension",
   rng_all:"All", rng_10y:"10Y", rng_5y:"5Y", rng_3y:"3Y", rng_1y:"1Y", rng_6m:"6M", rng_3m:"3M",
   trust_open:"Open & transparent model", trust_data:"Public data only (Coin Metrics)", trust_advice:"Never financial advice",
   bt_eye:"Try it yourself", bt_h:"Interactive backtest (2014 → today)",
@@ -619,8 +631,41 @@ let DAY_OPEN=DATA.p[DATA.p.length-1];   /* today's 00:00 UTC open; refreshed bel
 let MTX_ROWS=[];
 
 /* smooth blue -> teal -> gold -> orange -> dark-red ramp, used everywhere risk is shown */
-const RISK_STOPS=[[0,[30,111,235]],[0.22,[70,179,201]],[0.48,[232,200,74]],[0.70,[236,122,28]],[0.88,[214,61,46]],[1,[200,46,52]]];
-function riskColor(r){ r=clip(r,0,1);
+/* ---- the colour ramp -------------------------------------------------------
+ * V2_STOPS were positioned against v2's distribution, where the blend's median
+ * was 0.370 and only 2.8% of days ever reached 0.80. Carried onto the ranked
+ * scale unchanged they stop meaning anything, because the same positions catch
+ * a completely different share of history:
+ *
+ *     stop        v2 days at/above      v3 days at/above
+ *     0.22               84.5%                 85.5%
+ *     0.48               30.5%                 65.1%
+ *     0.70                7.9%                 43.0%
+ *     0.88                0.8%                 15.4%
+ *
+ * 43% of history would sit at or past the orange stop, so a chart that looked
+ * mostly blue would come back mostly hot without a single number changing.
+ *
+ * V3_STOPS are therefore placed on the four bands the rest of the site already
+ * publishes -- the quintile wording the gauge, the email and the bot use, and
+ * the same four colours as V3_REGIMES in btc-risk-weekly.mjs. This is not a new
+ * choice, it is the approved one propagated: a legend that disagrees with the
+ * email is the P6 problem in visual form. Occupancy 13 / 31 / 27 / 29 %.
+ *
+ * Reverting to the old positions is one line -- V3_STOPS = V2_STOPS -- and the
+ * chart would still be numerically correct, just coloured by thresholds that
+ * have no meaning on a percentile axis.
+ */
+const V2_STOPS=[[0,[30,111,235]],[0.22,[70,179,201]],[0.48,[232,200,74]],[0.70,[236,122,28]],[0.88,[214,61,46]],[1,[200,46,52]]];
+const V3_STOPS=[[0,[63,185,80]],[0.20,[70,179,201]],[0.60,[236,122,28]],[0.80,[214,61,46]],[1,[200,46,52]]];
+/* `model` is explicit because the two scales coexist on one page: the gauge and
+   the matrix follow the SERVING model, while the main chart follows whichever
+   series it managed to load. Those can differ -- v3 gauge, v2 chart, if the
+   chart file is missing -- and colouring v2 values with v3 bands would be the
+   one combination that misleads. */
+function riskStops(model){ return (model||(v3on()?"v3":"v2"))==="v3"?V3_STOPS:V2_STOPS; }
+function riskColor(r,model){ r=clip(r,0,1);
+  const RISK_STOPS=riskStops(model);
   for(let i=1;i<RISK_STOPS.length;i++){ if(r<=RISK_STOPS[i][0]){
     const a0=RISK_STOPS[i-1][0],c0=RISK_STOPS[i-1][1],a1=RISK_STOPS[i][0],c1=RISK_STOPS[i][1];
     const f=(r-a0)/((a1-a0)||1), c=c0.map((v,k)=>Math.round(v+(c1[k]-v)*f));
@@ -698,14 +743,25 @@ function renderOverlay(spot){
 
 /* ---- main chart ---- */
 const COL={grid:"#1a2230",font:"#8b95a7",blue:"#5b8def",risk:"#ef5366"};
+
+/* Which model the chart is plotting, and on which scale.
+   v2's DATA.r is a 0-1 blend. v3's r is risk100: an INTEGER 0-100 percentile.
+   They are different quantities on different scales and must never share an
+   axis, so R_MAX travels with the data and every consumer -- y2 range and
+   ticks, the colour ramp, the tooltip, the heat legend, the CSV export --
+   reads it instead of assuming 1. Starts on v2 and is swapped in only once
+   V3.chart has actually loaded, which is the same fallback the gauge uses. */
+let CHART_MODEL="v2", R_MAX=1;
 let CUR={t:DATA.t.slice(),p:DATA.p.slice(),r:DATA.r.slice(),c:DATA.c.slice()};
+const rUnit=r=>clip((Number(r)||0)/R_MAX,0,1);   /* native scale -> 0..1 for colour */
 let heatMap=false;
 /* price line coloured by the risk scale: split into N risk buckets, one trace per bucket,
    with nulls separating disjoint runs so each segment carries its risk colour. */
 function heatTraces(){
   const N=26, buckets=[]; for(let i=0;i<N;i++) buckets.push({x:[],y:[]});
-  const bidx=r=>Math.min(N-1,Math.max(0,Math.floor(clip(r,0,1)*N)));
+  const bidx=r=>Math.min(N-1,Math.max(0,Math.floor(rUnit(r)*N)));
   for(let i=0;i<CUR.t.length;i++){
+    if(CUR.r[i]==null) continue;        /* v3: days with no published rank yet */
     const b=bidx(CUR.r[i]);
     for(let k=0;k<N;k++){
       if(k===b || (i>0 && (k===bidx(CUR.r[i-1])))){ buckets[k].x.push(CUR.t[i]); buckets[k].y.push(CUR.p[i]); }
@@ -713,17 +769,31 @@ function heatTraces(){
     }
   }
   return buckets.map((bk,k)=>({x:bk.x,y:bk.y,yaxis:"y",mode:"lines",connectgaps:false,
-    line:{color:riskColor((k+0.5)/N),width:3.2},hoverinfo:"skip"}));
+    line:{color:riskColor((k+0.5)/N,CHART_MODEL),width:3.2},hoverinfo:"skip"}));
 }
 function chartTraces(){
   if(heatMap) return heatTraces();
+  /* v3 prints an integer percentile, v2 a 0-1 blend: the tooltip must not read
+     "Risk 0.803" for a number the rest of the site prints as 80, nor imply
+     three decimals of precision the published row does not carry. */
+  const rhov=(CHART_MODEL==="v3")
+    ? t("chart_tip_v3")+" %{y:.0f}/100 · conf %{customdata}/10<extra></extra>"
+    : "Risk %{y:.3f} · conf %{customdata}/10<extra></extra>";
   return [
   {x:CUR.t,y:CUR.p,yaxis:"y",mode:"lines",line:{color:COL.blue,width:1.1},hovertemplate:"%{x|%d %b %Y}<br>$%{y:,.0f}<extra></extra>"},
-  {x:CUR.t,y:CUR.r,yaxis:"y2",mode:"lines",line:{color:COL.risk,width:1.0},customdata:CUR.c,hovertemplate:"Risk %{y:.3f} · conf %{customdata}/10<extra></extra>"}
+  {x:CUR.t,y:CUR.r,yaxis:"y2",mode:"lines",connectgaps:false,line:{color:COL.risk,width:1.0},customdata:CUR.c,hovertemplate:rhov}
 ];}
-const X_MIN=DATA.t[0];
+/* Axis bounds follow whichever series is loaded: v2 starts 2011-01-13 at a few
+   cents, the v3 tape starts 2012-03-07 at a few dollars. Keeping v2's bounds
+   under a v3 chart leaves a band of empty space nothing can ever plot into. */
+let X_MIN=DATA.t[0];
 const X_MAX=new Date(Date.now()+30*864e5).toISOString().slice(0,10);
-const P_MIN=Math.min.apply(null,DATA.p)||0.01, P_MAX=Math.max.apply(null,DATA.p);
+let P_MIN=Math.min.apply(null,DATA.p)||0.01, P_MAX=Math.max.apply(null,DATA.p);
+function syncChartBounds(){
+  X_MIN=CUR.t[0];
+  const px=CUR.p.filter(v=>v!=null&&isFinite(v)&&v>0);
+  P_MIN=Math.min.apply(null,px)||0.01; P_MAX=Math.max.apply(null,px);
+}
 let priceLog=true;
 /* ===== chart time-range buttons (All / 10Y / 5Y / 3Y / 1Y / 6M / 3M) ===== */
 let CHART_RANGE="all", _rngProg=false;
@@ -775,7 +845,11 @@ function chartLayout(){
   hoverlabel:{bgcolor:"#0d121b",bordercolor:"#2a3444",font:{color:"#e9edf4",family:"IBM Plex Mono"}},
   xaxis:{gridcolor:COL.grid,zeroline:false,color:COL.font,type:"date",rangeslider:{visible:false},range:chartRangeWindow(),minallowed:X_MIN,maxallowed:X_MAX},
   yaxis:yax,
-  yaxis2:{title:{text:heatMap?"":"Risk",font:{color:COL.font}},overlaying:"y",side:"right",range:[0,1],minallowed:0,maxallowed:1,fixedrange:true,gridcolor:"rgba(0,0,0,0)",zeroline:false,color:COL.font,showticklabels:!heatMap,visible:!heatMap}};}
+  yaxis2:{title:{text:heatMap?"":t(CHART_MODEL==="v3"?"chart_y2_v3":"chart_y2_v2"),font:{color:COL.font}},
+          overlaying:"y",side:"right",range:[0,R_MAX],minallowed:0,maxallowed:R_MAX,fixedrange:true,
+          gridcolor:"rgba(0,0,0,0)",zeroline:false,color:COL.font,
+          tickformat:CHART_MODEL==="v3"?"d":undefined,
+          showticklabels:!heatMap,visible:!heatMap}};}
 function drawChart(){ return Plotly.react("chartPlot",chartTraces(),chartLayout(),{responsive:true,scrollZoom:true,displayModeBar:false,displaylogo:false,doubleClick:"reset"}); }
 function syncHeatBtn(){ const b=document.getElementById("btnHeat"); if(b){ b.textContent=t("chart_heat"); b.classList.toggle("chip-on",heatMap); }
   const sw=document.getElementById("stripWrap"); if(sw) sw.style.display=heatMap?"":"none";
@@ -784,6 +858,41 @@ function syncHeatBtn(){ const b=document.getElementById("btnHeat"); if(b){ b.tex
 function toggleHeat(){ heatMap=!heatMap; syncHeatBtn(); if(window.Plotly) drawChart(); }
 function syncScaleBtn(){ const b=document.getElementById("btnScale"); if(b) b.textContent=priceLog?t("chart_lin"):t("chart_log"); }
 function toggleScale(){ priceLog=!priceLog; syncScaleBtn(); if(window.Plotly) drawChart(); }
+
+/* ---- swap the chart onto the published v3 series ----
+   The chart plotted DATA.r from data.js -- the v2 blend -- underneath a v3
+   gauge. That is not cosmetic: 2025-10-06 drew 0.556 against v3's 80/100 and
+   2024-03-13 drew 0.676 against 86/100, so v2's central failure (a compressed-
+   multiple all-time high printing mid-cycle) was being shown as history under
+   the number that exists to correct it.
+
+   Guarded the same way the gauge is: this runs only when V3.chart has loaded
+   and V3 is active. Otherwise the chart stays on v2 and the header copy still
+   says v2, which is the fallback working as designed -- never a silent mix. */
+function useV3Chart(){
+  if(!v3on() || typeof V3==="undefined" || !V3 || !V3.chart) return false;
+  const ch=V3.chart;
+  CHART_MODEL="v3"; R_MAX=100;
+  CUR={t:ch.t.slice(),p:ch.p.slice(),r:ch.r.slice(),c:ch.c.slice()};
+  syncChartBounds();
+  syncChartCopy();
+  if(window.Plotly) drawChart();
+  return true;
+}
+/* The section heading, blurb, legend and heat-strip labels all name a scale.
+   They move together with the data or they contradict it. */
+function syncChartCopy(){
+  const v3=CHART_MODEL==="v3";
+  const set=(id,key)=>{ const e=document.getElementById(id); if(e) e.textContent=t(key); };
+  set("chartHead", v3?"chart_h_v3":"chart_h");
+  set("chartDesc", v3?"chart_d_v3":"chart_d");
+  set("legRisk",   v3?"leg_risk_v3":"leg_risk");
+  const lbl=document.getElementById("stripLbl");
+  if(lbl) lbl.innerHTML=(v3?["0","20","60","80","100"]:["0","0.3","0.6","1.0"])
+    .map(s=>"<span>"+s+"</span>").join("");
+  const bar=document.getElementById("stripBar");
+  if(bar) bar.classList.toggle("v3",v3);
+}
 
 /* ---- live refresh (multi-source) ---- */
 async function fetchSpot(){
@@ -808,6 +917,26 @@ async function refresh(){
     }catch(e){}
     if(!fresh.length){ const s=await fetchSpot(); if(s){ const d=new Date().toISOString().slice(0,10); if(d>MODEL.lastDate) fresh=[{date:d,price:s}]; } }
     if(!fresh.length) return;
+    if(CHART_MODEL==="v3"){
+      /* Extend the PRICE line to today and nothing else. There is no v3 rank
+         for a day the tape has not published, and deriving one in the browser
+         is exactly the recompute rule 1 forbids -- an expanding CDF means
+         today's provisional rank would not equal the row that gets committed
+         tomorrow. So r and c carry null for those days and the risk line simply
+         stops at the last published row, which is the truth. */
+      const tt=V3.chart.t.slice(),pp=V3.chart.p.slice(),rr=V3.chart.r.slice(),cc=V3.chart.c.slice();
+      const lastPub=tt[tt.length-1];
+      for(const pt of fresh){ if(pt.date<=lastPub) continue;
+        tt.push(pt.date); pp.push(pt.price); rr.push(null); cc.push(null); }
+      CUR={t:tt,p:pp,r:rr,c:cc};
+      LIVE_PX=pp[pp.length-1];
+      if(window.Plotly) drawChart();
+      updateAction();                       /* re-reads the committed row */
+      renderOverlay(LIVE_PX);
+      if(typeof buildRanges==="function") buildRanges();
+      if(typeof buildMatrix==="function") buildMatrix();
+      return;
+    }
     const tt=DATA.t.slice(),pp=DATA.p.slice(),rr=DATA.r.slice(),cc=DATA.c.slice();
     let prevRisk=MODEL.lastRisk, runMax=MODEL.lastATH, prices=DATA.p.slice(), last=null;
     for(const pt of fresh){ prices.push(pt.price); const i=prices.length-1; runMax=Math.max(runMax,pt.price);
@@ -857,10 +986,17 @@ function chartWindow(){ /* current x-window after zoom/pan; null = full range */
   return [iso(ax.range[0]),iso(ax.range[1])];
 }
 function exportChartCSV(){
-  const w=chartWindow(); let rows="date,price_usd,risk,confidence\n";
+  /* Name the scale in the header: a column called "risk" holding 80 and a
+     column called "risk" holding 0.556 are different quantities, and a
+     downloaded file outlives the page that explained which one it was. */
+  const w=chartWindow();
+  const cell=v=>(v==null?"":v);
+  let rows=(CHART_MODEL==="v3")
+    ? "date,price_usd,risk100_percentile,confidence\n"
+    : "date,price_usd,risk_v2_blend,confidence\n";
   for(let i=0;i<CUR.t.length;i++){
     const d=CUR.t[i]; if(w&&(d<w[0]||d>w[1])) continue;
-    rows+=d+","+CUR.p[i]+","+CUR.r[i]+","+CUR.c[i]+"\n";
+    rows+=d+","+cell(CUR.p[i])+","+cell(CUR.r[i])+","+cell(CUR.c[i])+"\n";
   }
   dlFile("btc-risk-chart-"+expStamp()+".csv","text/csv;charset=utf-8",rows);
 }
@@ -1771,6 +1907,11 @@ if(typeof V3!=="undefined" && V3 && V3.ready){
     updateAction();
     renderOverlay(LIVE_PX);
     if(typeof buildMatrix==="function") buildMatrix();
+    /* The chart swaps only when BOTH are in: the gauge is serving v3 and the
+       published chart series actually loaded. Either one missing leaves the
+       chart on v2 with v2's own copy and legend -- the fallback working, not a
+       silent mix of the two scales. */
+    if(V3.chartReady) V3.chartReady.then(function(){ useV3Chart(); }).catch(function(){});
   }).catch(function(){});
 }
 doBacktest();

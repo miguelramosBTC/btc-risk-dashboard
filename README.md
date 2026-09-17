@@ -16,7 +16,7 @@ series**, and they are **different objects on different scales**.
 
 | | v2 | v3.0 |
 |---|---|---|
-| File | `data.json` / `data.js` | `series/v3.0.jsonl` (+ `series/v3.0_last90.json`) |
+| File | `data.json` / `data.js` | `series/v3.0.jsonl` (+ `series/v3.0_last90.json`, `series/v3.0_chart.json`) |
 | Produced by | `btc_risk_model_v2.py` | `model/v3/` via `etl/daily_v3.py` |
 | What the number is | a **blend** of mapped signals | a **causal percentile rank** |
 | Median over its own history | **0.370** | **0.66** |
@@ -29,6 +29,15 @@ series**, and they are **different objects on different scales**.
 > to that morning"* and happens about three days in ten; a v2 reading of 0.80 was
 > a twice-a-cycle event. Plotting them on one chart, diffing them, or carrying a
 > threshold from one to the other produces a number that means nothing.
+
+They do not even share the 0–1 axis any more: `series/v3.0_chart.json` publishes
+`risk100`, an **integer 0–100 percentile**, while `data.js` publishes a 0–1
+blend. `R_MAX` in `app.js` travels with whichever series is loaded so the axis,
+the colour ramp, the tooltip and the CSV export can never assume the other
+one's scale. The chart's colour stops are placed on the four published quintile
+bands (0–20 / 20–60 / 60–80 / 80–100) so the legend agrees with the gauge, the
+email and the bot; v2's stops were positioned against v2's distribution and
+mean nothing on a ranked scale.
 
 Every consumer states which model served it:
 

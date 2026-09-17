@@ -401,3 +401,188 @@ def test_missing_tape_is_labelled_not_silently_recomputed(tmp_path, monkeypatch)
     from model.v3 import validate
     monkeypatch.chdir(tmp_path)
     assert validate.read_committed_tape("series/v3.0.jsonl") is None
+
+
+# --------------------------------------------------------------------------- #
+#  The public chart series
+# --------------------------------------------------------------------------- #
+@needs_csv
+def test_chart_series_is_derived_from_the_tape_never_recomputed(etl, tape, tmp_path):
+    """The chart must show what was PUBLISHED.
+
+    The site had no v3 history, so the chart kept plotting v2's blend under a v3
+    gauge: 2025-10-06 drew 0.556 against v3's 80/100. Fixing that by recomputing
+    a history in the browser or the ETL would have been the worse bug -- an
+    expanding CDF means a recompute today moves 2017's rank, so the picture
+    would disagree with the tape it sits under.
+    """
+    p = tmp_path / "series" / "v3.0.jsonl"
+    p.parent.mkdir()
+    etl.append_rows(tape, p, bootstrap=True, allow_stale=True)
+    rows = etl.read_tape(p)
+
+    doc = etl.write_chart(etl.chart_for(p), p)
+    assert doc["t"] == [r["asof_date"] for r in rows]
+    assert doc["r"] == [r["risk100"] for r in rows]     # identity, not similarity
+    assert doc["p"] == [r["price_usd"] for r in rows]
+    assert doc["c"] == [r["conf"] for r in rows]
+    assert doc["n"] == len(rows)
+
+
+@needs_csv
+def test_chart_r_is_the_0_100_percentile_not_the_0_1_blend(etl, tape, tmp_path):
+    """The scale change is the thing most likely to be silently undone.
+
+    v2's DATA.r is a 0-1 blend; v3's r is an integer 0-100 percentile. A chart
+    that plots one on the other's axis is wrong by a factor of 100 and looks
+    plausible, so assert the type and the range rather than trusting the name.
+    """
+    p = tmp_path / "series" / "v3.0.jsonl"
+    p.parent.mkdir()
+    etl.append_rows(tape, p, bootstrap=True, allow_stale=True)
+    doc = etl.write_chart(etl.chart_for(p), p)
+
+    assert all(isinstance(v, int) for v in doc["r"])
+    assert all(0 <= v <= 100 for v in doc["r"])
+    assert max(doc["r"]) > 1, "a 0-1 blend leaked in where a 0-100 rank belongs"
+    assert "risk100" in doc["note"] and "NOT" in doc["note"]
+    assert doc["scale"]["r"].startswith("risk100")
+
+
+@needs_csv
+def test_chart_stays_inside_the_path_it_was_given(etl, tape, tmp_path):
+    """Same rule as the window: --tape somewhere else must not write here."""
+    p = tmp_path / "sandbox.jsonl"
+    etl.append_rows(tape, p, bootstrap=True, allow_stale=True)
+    assert etl.chart_for(p) == tmp_path / "sandbox_chart.json"
+    etl.write_chart(etl.chart_for(p), p)
+    assert (tmp_path / "sandbox_chart.json").exists()
+    assert not (tmp_path / "series").exists()
+
+
+@needs_csv
+def test_chart_dry_run_writes_nothing(etl, tape, tmp_path):
+    p = tmp_path / "sandbox.jsonl"
+    etl.append_rows(tape, p, bootstrap=True, allow_stale=True)
+    doc = etl.write_chart(etl.chart_for(p), p, dry_run=True)
+    assert doc["n"] == len(etl.read_tape(p))
+    assert not (tmp_path / "sandbox_chart.json").exists()
+
+
+# --------------------------------------------------------------------------- #
+#  Committed pillars feed the collinearity gate
+# --------------------------------------------------------------------------- #
+@needs_csv
+def test_committed_pillars_match_the_recompute(etl, tape, tmp_path, monkeypatch):
+    """Reading the tape's V/G/T/S must be the same measurement, not a new one.
+
+    Equal to the half-ulp of the 6-decimal rounding `_row_to_json` applies on the
+    way out, and no looser: if these ever diverge by more than that, the tape and
+    the recompute have stopped being the same quantity and the gate's numbers
+    would be comparing two different things.
+
+    The `+ 1e-12` is float representation, not slack. A value sitting exactly on
+    the rounding boundary lands at 5.000000000005e-07 once the two decimals are
+    subtracted in binary, so a bare `<= 5e-7` fails on a difference that IS the
+    half-ulp. The claim is unchanged; only the comparison is made representable.
+    """
+    from model.v3 import validate
+
+    p = tmp_path / "series" / "v3.0.jsonl"
+    p.parent.mkdir()
+    etl.append_rows(tape, p, bootstrap=True, allow_stale=True)
+    monkeypatch.chdir(tmp_path)
+
+    HALF_ULP_6DP, HALF_ULP_2DP = 5e-7 + 1e-12, 5e-3 + 1e-9
+    cp = validate.read_committed_pillars("series/v3.0.jsonl")
+    assert cp is not None
+    for col in ("V", "G", "T", "S"):
+        both = cp[col].dropna().index.intersection(tape[col].dropna().index)
+        assert len(both) > 1000
+        assert (cp.loc[both, col] - tape.loc[both, col]).abs().max() <= HALF_ULP_6DP
+    assert (cp["price_usd"] - tape.loc[cp.index, "price_usd"]).abs().max() <= HALF_ULP_2DP
+
+
+@needs_csv
+def test_collinearity_reads_the_committed_pillars_and_outruns_the_csv(etl, tape, tmp_path, monkeypatch):
+    """The gate used to score a CSV recompute that stops at the dump's vintage.
+
+    The Coin Metrics dump has been frozen at 2026-05-24 since May while the API
+    top-up reaches the present, so the pillar-based gates were permanently four
+    months behind the tape -- a standing condition, not one-off staleness. The
+    tape carries V/G/T/S already, so the gate needs no recompute at all.
+    """
+    from model.v3 import validate
+
+    p = tmp_path / "series" / "v3.0.jsonl"
+    p.parent.mkdir()
+    etl.append_rows(tape, p, bootstrap=True, allow_stale=True)
+    monkeypatch.chdir(tmp_path)
+
+    cp = validate.read_committed_pillars("series/v3.0.jsonl")
+    g = validate.gate_collinearity(cp, cp["price_usd"], "COMMITTED tape (published pillars)")
+    assert g.ok
+    # every printed statistic survives the source change
+    assert any("partial (BLOCKER)" in l for l in g.lines)
+    assert any("level (disclose)" in l for l in g.lines)
+    assert any("raw diff (diagnose)" in l for l in g.lines)
+    assert any("price elasticity" in l for l in g.lines)
+    assert any("Sigma pairs, reported off-gate" in l for l in g.lines)
+    # and the report says which pillars were measured, so a silent swap is visible
+    assert any("pillars read from: COMMITTED tape" in l for l in g.lines)
+
+
+def test_a_tape_without_pillars_falls_back_rather_than_guessing(tmp_path, monkeypatch):
+    """A v3.1 frame may drop a diagnostic. Returning None lets the caller say so."""
+    from model.v3 import validate
+
+    d = tmp_path / "series"
+    d.mkdir()
+    (d / "v3.0.jsonl").write_text(
+        json.dumps({"asof_date": "2026-01-01", "risk100": 50, "rank_exact": 0.5}) + "\n")
+    monkeypatch.chdir(tmp_path)
+    assert validate.read_committed_pillars("series/v3.0.jsonl") is None
+    assert validate.read_committed_tape("series/v3.0.jsonl") is not None
+
+
+# --------------------------------------------------------------------------- #
+#  One loader
+# --------------------------------------------------------------------------- #
+def test_there_is_exactly_one_input_loader(etl):
+    """Two loaders is how the gate report ended up on a staler source than the
+    tape. `etl.load_inputs` must BE `etl.inputs.load_inputs`, not a copy."""
+    import etl.inputs as inputs_mod
+    assert etl.load_inputs is inputs_mod.load_inputs
+    assert etl.CSV_URL is inputs_mod.CSV_URL
+
+
+def test_the_loader_does_not_import_a_compute_module():
+    """Keeps `model.v3.validate -> etl.inputs` cycle-free, and keeps the daily
+    append's dependency surface at numpy + pandas."""
+    src = (ROOT / "etl" / "inputs.py").read_text()
+    body = "\n".join(l for l in src.splitlines() if not l.lstrip().startswith("#"))
+    for banned in ("import compute", "import pillars", "import features",
+                   "import growth", "import ensemble", "from model.v3 import",
+                   "import scipy", "import statsmodels"):
+        assert banned not in body, f"etl/inputs.py must not carry `{banned}`"
+    assert "from model.v3.constants import" in body      # constants only
+
+
+def test_validate_imports_the_loader_lazily():
+    """`import model.v3.validate` must not drag the ETL in: model/ does not
+    depend on etl/ except at validate's CLI edge, inside main()."""
+    import ast
+
+    src = (ROOT / "model" / "v3" / "validate.py").read_text()
+    tree = ast.parse(src)
+    for node in tree.body:                               # module scope only
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            mod = getattr(node, "module", "") or ""
+            names = " ".join(a.name for a in node.names)
+            assert "etl" not in mod and "etl" not in names, \
+                "etl imported at module scope; it must be lazy inside main()"
+    main_fn = next(n for n in tree.body
+                   if isinstance(n, ast.FunctionDef) and n.name == "main")
+    lazy = [n for n in ast.walk(main_fn)
+            if isinstance(n, ast.ImportFrom) and (n.module or "").startswith("etl")]
+    assert lazy, "main() must import the shared loader"

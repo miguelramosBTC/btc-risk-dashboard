@@ -252,6 +252,40 @@ fourth is unexplained in the material committed here.
 
 ---
 
+## `series/v3.0_chart.json` — the public chart series
+
+**Derived from the tape, never recomputed** *(etl.write_chart)*. Full published
+history as four parallel arrays, so the page can plot v3 without shipping the
+4.9 MB tape as a browser asset. ~135 KB, against the 166 KB `data.js` already
+served publicly, so it costs nothing and **does not move the free/Pro line** —
+full rows, pillars, bands and diagnostics stay in the tape and the window.
+
+| Key | Meaning |
+|---|---|
+| `schema_version` | Same constitution identifier as the rows. |
+| `generated_utc` | `YYYY-MM-DDTHH:MM:SSZ` of the write. |
+| `note` / `scale` | Name the scale explicitly — see the warning below. |
+| `n` | Row count; all four arrays are this long. |
+| `t[]` | `asof_date`, ascending. |
+| `p[]` | `price_usd`. |
+| `r[]` | **`risk100`: an integer 0–100 percentile.** |
+| `c[]` | `conf`, 0–10. |
+
+> **`r` is not v2's `DATA.r`.** v2 publishes a 0–1 blend; this publishes an
+> integer 0–100 rank. Plotting one on the other's axis is wrong by a factor of
+> 100 and looks entirely plausible — which is exactly what happened: the chart
+> drew v2's 0.556 for 2025-10-06 underneath a v3 gauge reading 80. `R_MAX` in
+> `app.js` carries the scale with the data so no consumer can assume the wrong
+> one, and `model/v3/tests/test_phase4.py` asserts the type and range rather
+> than trusting the column name.
+
+Why the chart may not recompute: an expanding CDF means a recompute today moves
+2017's rank (rule 1). A browser-side history would therefore disagree with the
+tape printed above it. The risk line stops at the last committed row and the
+price line continues live; the gap is the honest answer, not a provisional rank.
+
+---
+
 ## `series/v3.0_last90.json` — the free window
 
 **Derived from the tape, never recomputed** *(etl)*.

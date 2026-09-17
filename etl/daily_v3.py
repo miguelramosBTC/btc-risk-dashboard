@@ -47,11 +47,15 @@ from model.v3 import (compute, ensemble, features, growth,           # noqa: E40
 from model.v3 import constants                                       # noqa: E402
 from model.v3.constants import NEED_V3, SCHEMA_VERSION               # noqa: E402
 
+### The input loader lives in etl/inputs.py, so the gate report and the daily
+### append cannot drift onto two different sources. Re-exported here because
+### `load_inputs`, `CSV_URL` and `CM_API` were part of this module's surface.
+from etl.inputs import (CM_API, CSV_URL, _fetch_api,   # noqa: E402,F401
+                        load_inputs)
+
 TAPE = Path("series/v3.0.jsonl")
 WINDOW = Path("series/v3.0_last90.json")
 WINDOW_DAYS = 90
-CSV_URL = "https://raw.githubusercontent.com/coinmetrics/data/master/csv/btc.csv"
-CM_API = "https://community-api.coinmetrics.io/v4/timeseries/asset-metrics"
 BOOTSTRAP_MAX_LAG_DAYS = 3   # a bootstrap on stale inputs is unrecoverable
 JUMP_ALERT = 12          # |delta risk100| above this is flagged for a human
 STALE_HOURS = 36         # §9.1: any required field older than this sets stale=1
@@ -64,37 +68,6 @@ PRICE_ALT_URL = ("https://api.coingecko.com/api/v3/coins/bitcoin/market_chart"
 # --------------------------------------------------------------------------- #
 #  Input
 # --------------------------------------------------------------------------- #
-def _fetch_api(after: pd.Timestamp) -> pd.DataFrame | None:
-    """Community API top-up. Returns complete rows only, or None."""
-    import time
-    import urllib.request
-
-    start = (pd.Timestamp(after) - pd.Timedelta(days=5)).strftime("%Y-%m-%d")
-    url = (f"{CM_API}?assets=btc&metrics={','.join(NEED_V3)}"
-           f"&frequency=1d&page_size=10000&start_time={start}")
-    rows: list[dict] = []
-    for _ in range(10):
-        req = urllib.request.Request(url, headers={"User-Agent": "btc-risk-v3/1.0"})
-        with urllib.request.urlopen(req, timeout=60) as r:
-            j = json.loads(r.read().decode())
-        rows.extend(j.get("data", []))
-        nxt = j.get("next_page_url")
-        if not nxt:
-            break
-        url = nxt
-        time.sleep(0.7)
-    if not rows:
-        return None
-    d = pd.DataFrame(rows)
-    if "time" not in d.columns or any(c not in d.columns for c in NEED_V3):
-        return None
-    d["time"] = pd.to_datetime(d["time"], utc=True).dt.tz_localize(None).dt.normalize()
-    for c in NEED_V3:
-        d[c] = pd.to_numeric(d[c], errors="coerce")
-    d = d.dropna(subset=NEED_V3)
-    return d[["time"] + NEED_V3] if not d.empty else None
-
-
 def fetch_price_alt() -> tuple[pd.Timestamp, float] | None:
     """A second, independent daily close (§9.2). Keyless, best-effort.
 
@@ -118,42 +91,6 @@ def fetch_price_alt() -> tuple[pd.Timestamp, float] | None:
     except Exception as e:                            # noqa: BLE001
         print(f"[data] price_alt unavailable ({type(e).__name__}); row will carry null")
         return None
-
-
-def load_inputs(csv: str | None = None, use_api: bool = True) -> pd.DataFrame:
-    """Deep history from the community CSV, recent tail from the community API.
-
-    Same hybrid as v2: the GitHub CSV dump stalls, so the API carries the tail.
-    Coin Metrics community is the only required source (decision of 2026-09-11);
-    nothing else enters the daily job.
-    """
-    # Default to the live dump. Preferring a local btc.csv whenever one happens to
-    # exist meant that committing a snapshot -- or leaving one behind from a test
-    # run -- would silently freeze the daily job on stale inputs while every log
-    # line still read "success". A local file is used only when asked for by name.
-    src = csv or CSV_URL
-    print(f"[data] reading {src}")
-    df = pd.read_csv(src, parse_dates=["time"]).sort_values("time")
-    # §9.2: persist both vintages, so a restatement can be traced to its source
-    df.attrs["csv_vintage"] = str(df["time"].max().date()) if not df.empty else None
-    df.attrs["api_vintage"] = None
-
-    if use_api and not df.empty:
-        try:
-            tail = _fetch_api(df["time"].max())
-            if tail is not None and not tail.empty:
-                before = df["time"].max()
-                df = (pd.concat([df, tail], ignore_index=True)
-                        .drop_duplicates(subset="time", keep="last")
-                        .sort_values("time").reset_index(drop=True))
-                df.attrs["csv_vintage"] = str(before.date())
-                df.attrs["api_vintage"] = str(tail["time"].max().date())
-                print(f"[data] API top-up: {before.date()} -> {df['time'].max().date()}")
-            else:
-                print("[data] API returned no complete rows; CSV only")
-        except Exception as e:                       # noqa: BLE001
-            print(f"[data] API top-up skipped ({type(e).__name__}: {e}); CSV only")
-    return df
 
 
 def input_hash(row: pd.Series) -> str:
@@ -516,6 +453,58 @@ def window_for(tape_path: Path) -> Path:
     return tape_path.with_name(tape_path.stem + "_last90.json")
 
 
+def chart_for(tape_path: Path) -> Path:
+    """The public chart series that belongs to a given tape. Derived, never a
+    module constant -- same reason as `window_for`."""
+    tape_path = Path(tape_path)
+    return tape_path.with_name(tape_path.stem + "_chart.json")
+
+
+def write_chart(path: Path | None = None, tape_path: Path = TAPE,
+                dry_run: bool = False) -> dict:
+    """Four parallel arrays for the public price-and-risk chart, full history.
+
+    The site had no v3 history to plot: the 90-day window is too short and the
+    tape is 4.9 MB, which is not a browser asset. So the chart kept plotting
+    `DATA.r` from data.js -- the v2 blend -- underneath a v3 gauge. That is not a
+    cosmetic mismatch: 2025-10-06 read 0.556 on the chart against v3's 80/100,
+    and 2024-03-13 read 0.676 against 86/100. v2's central failure (a compressed
+    -multiple all-time high printing mid-cycle) was being drawn as history under
+    the number that exists to correct it.
+
+    Columnar rather than a list of row objects: ~131 KB against 166 KB for the
+    data.js already served publicly, so this costs nothing. The free/Pro split is
+    untouched -- full rows, pillars, bands and diagnostics stay in the tape and
+    the window.
+
+    DERIVED FROM THE COMMITTED TAPE, never recomputed. Rule 1: a recompute today
+    would move 2017's rank, so the chart must show what was published.
+    """
+    path = Path(path) if path is not None else chart_for(tape_path)
+    rows = read_tape(tape_path)
+    doc = {
+        "schema_version": SCHEMA_VERSION,
+        "generated_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "note": ("Public chart series, derived from the committed tape. "
+                 "r is risk100: an integer 0-100 PERCENTILE of causal history, "
+                 "NOT v2's 0-1 blend and NOT a probability. The two scales must "
+                 "never share an axis."),
+        "scale": {"r": "risk100, integer 0-100, causal percentile rank",
+                  "c": "confidence 0-10", "p": "USD close"},
+        "n": len(rows),
+        "t": [r["asof_date"] for r in rows],
+        "p": [r["price_usd"] for r in rows],
+        "r": [r["risk100"] for r in rows],
+        "c": [r["conf"] for r in rows],
+    }
+    if not dry_run:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(doc, separators=(",", ":")))
+        kb = path.stat().st_size / 1024
+        print(f"[chart] wrote {len(rows)} rows ({kb:.0f} KB) -> {path}")
+    return doc
+
+
 def write_window(path: Path | None = None, tape_path: Path = TAPE,
                  days: int = WINDOW_DAYS, dry_run: bool = False) -> dict:
     """The free-tier window the UI reads. Derived from the tape, never recomputed."""
@@ -628,6 +617,7 @@ def main(argv=None) -> int:
     append_rows(tape, tape_path, bootstrap=a.bootstrap, dry_run=a.dry_run,
                 allow_stale=a.allow_stale_bootstrap)
     write_window(window_for(tape_path), tape_path, dry_run=a.dry_run)
+    write_chart(chart_for(tape_path), tape_path, dry_run=a.dry_run)
     alerts = health_check(tape_path)
     # Report, but do not fail the append: committing the row matters more than
     # surfacing the alert here, and the alert is surfaced by --health-only in a

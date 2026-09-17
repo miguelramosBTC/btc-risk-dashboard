@@ -9,6 +9,7 @@ artifact**. Nothing in this directory is a build output.
 | `v2_frozen.json` | v2 (`btc_risk_model_v2.py`) | **frozen 2026-09-11** | never regenerated, never edited |
 | `v3.0.jsonl` | v3.0 (`model/v3/`) | **live, append-only** | one row per UTC day; committed rows are never rewritten |
 | `v3.0_last90.json` | v3.0 | derived | free-tier window, regenerated from the tape each run |
+| `v3.0_chart.json` | v3.0 | derived | public chart series, full history, regenerated from the tape each run |
 
 ---
 
