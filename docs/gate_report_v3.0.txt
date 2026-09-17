@@ -1,5 +1,9 @@
 ==============================================================================
-v3.0 SHIP GATES — tape 2012-03-07 -> 2026-05-23 (5191 rows)
+v3.0 SHIP GATES
+  scored on : COMMITTED tape series/v3.0.jsonl — 5307 rows, 2012-03-07 -> 2026-09-16
+  pillars   : recomputed from btc.csv, 2012-03-07 -> 2026-05-23
+  NOTE: the pillar recompute ends on a different date than the committed tape.
+        Tape-based gates use the tape; pillar-based gates use the recompute.
 ==============================================================================
 [PASS] Reach — every cycle high in the top quintile of its own causal history
        PASS  2013-12-04: causal rank 0.9407 (needs >= 0.800, margin +0.1407)
@@ -97,11 +101,10 @@ v3.0 SHIP GATES — tape 2012-03-07 -> 2026-05-23 (5191 rows)
        PASS  specification disagreement computed and recorded
 
 ------------------------------------------------------------------------------
-holdout 2025-09-11 -> 2026-05-23  n=255
+holdout 2025-09-11 -> 2026-09-10  n=365
   label: HOLDOUT / DESIGN-CONTAMINATED (not 'unseen')
-  INCOMPLETE: tape ends 2026-05-23, 110 days of the window are missing
   reach  2025-10-06: risk=0.8035 causal rank 0.803 -> top quintile
-  named  2026-06-30: PENDING — outside the computed tape (first v3 out-of-sample bottom (June 2026 low)). Holdout stays UNSIGNED.
-  bottom 2026-04-03: risk=0.1506 causal rank 0.151 -> bottom quintile
+  named  2026-06-30: risk=0.1042 causal rank 0.104 (first v3 out-of-sample bottom (June 2026 low)) -> bottom quintile
+  bottom 2026-07-01: risk=0.1040 causal rank 0.104 -> bottom quintile
 ------------------------------------------------------------------------------
 10/10 gates pass
