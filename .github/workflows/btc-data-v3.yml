@@ -81,15 +81,25 @@ jobs:
             ${{ inputs.with_rcap_alt && '--with-rcap-alt' || '' }}
 
       - name: Ship gates (report only; does not block the append)
+        # Committed on every run so it can never go stale. The last time it did,
+        # it kept printing the June 2026 low as PENDING for weeks after the low
+        # had landed, because nothing regenerated it.
+        #
+        # pipefail is explicit: GitHub's default shell is `bash -e {0}`, so in a
+        # pipeline the step takes TEE's exit code and a FAILING gate report would
+        # render as a green step. continue-on-error still keeps a red gate from
+        # blocking the append -- the difference is that the failure stays visible
+        # in the Actions UI instead of being swallowed by the pipe.
         continue-on-error: true
-        run: python3 -m model.v3.validate
+        shell: bash -eo pipefail {0}
+        run: python3 -m model.v3.validate | tee docs/gate_report_v3.0.txt
 
       - name: Commit the tape
         if: ${{ !inputs.dry_run }}
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add series/v3.0.jsonl series/v3.0_last90.json
+          git add series/v3.0.jsonl series/v3.0_last90.json docs/gate_report_v3.0.txt
           if git diff --staged --quiet; then
             echo "No new v3 row today."
           else
