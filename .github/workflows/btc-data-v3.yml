@@ -60,6 +60,14 @@ jobs:
       - name: Install deps
         run: pip install -r requirements.txt pytest
 
+      - name: Fetch the Coin Metrics dump for the test gate
+        # btc.csv is gitignored, and without it 63 of 116 tests skip while the
+        # step still goes green -- "a broken model must not write a row" was
+        # doing almost no work on a fresh runner. Fetch it so the gate is real.
+        # Not used by the ETL below: load_inputs pulls its own copy and only
+        # honours a local file when passed by name.
+        run: curl -sSLf https://raw.githubusercontent.com/coinmetrics/data/master/csv/btc.csv -o btc.csv
+
       - name: Unit tests (a broken model must not write a row)
         run: python3 -m pytest model/v3/tests -q
 

@@ -156,30 +156,37 @@ sandbox.
 
 ---
 
-## The tape does not exist yet
+## The tape is live
 
-`series/v3.0.jsonl` has not been founded. `--bootstrap` is the maintainer's to
-run, and `CLAUDE.md` forbids an agent from running it.
+Bootstrapped on the runner 2026-09-17 *(decision 33)*. `series/v3.0.jsonl` holds
+**5,307 causal rows, 2012-03-07 → 2026-09-16**, and the 06:05 cron has begun
+appending one row a day.
 
-Local dry run on the CSV alone (`--no-api --csv btc.csv`):
+| check | value |
+|---|---|
+| last row | 2026-09-16 · risk100 **32** · band 24–44 · conf 7 |
+| `n_live` / `stale` | 4 / 0 |
+| `csv_vintage` → `api_vintage` | 2026-05-24 → 2026-09-16 (they differ, as they must) |
+| `ens_lo`–`ens_hi` | 27–34 across 33 members |
+| `g_spec_lo`–`g_spec_hi` | 0.228–0.477 across 5 specifications |
+| `price_alt` | **null**, flag 0 |
 
-```
-[compute] 5191 causal rows through 2026-05-23
-[dry-run] would append 5191 row(s)
-```
+`price_alt` null is not a failure: the second public close was unreachable from
+the runner, and the row records that no second opinion was available rather than
+inventing one. A `price_alt_flag` of **1** would be the thing to investigate.
 
-**5,191 through 2026-05-23 is the runbook's abort condition**, and it is expected
-here: the Coin Metrics community API is unreachable from this sandbox
-(`CONNECT tunnel failed, response 403`), so only the lagging CSV was read. The
-real dry run in Actions must report **~5,300 rows ending yesterday or today**. If
-it still says 5,191, stop — see `docs/BOOTSTRAP_RUNBOOK.md` §2.
+**The holdout is complete and its named check landed.** `2026-06-30` — the first
+v3 out-of-sample bottom — prints causal rank **0.104**, inside the bottom
+quintile; the holdout trough (2026-07-01) prints 0.104 too. The window is now
+n = 365 and the `INCOMPLETE` line is gone. The label does **not** change: the
+changelog still calls this stretch design-contaminated, and one bottom is not a
+distribution. Real out-of-sample begins at the next ATH after the tape is frozen.
 
-**Consequence for the frontend cutover:** with no tape there is no
-`series/v3.0_last90.json`, so `v3.js` sets `V3.active = false` and the page must
-serve v2. The v3 rendering path cannot be verified end-to-end against a real
-committed row until the tape is founded.
-
----
+**`docs/gate_report_v3.0.txt` is stale.** It records the pre-bootstrap run that
+scored a 5,191-row recompute, and it still says `PENDING`. Re-run
+`python3 -m model.v3.validate` for current numbers; the file has not been
+regenerated because a committed gate report should come from a production run,
+not a laptop.
 
 ## What is committed
 

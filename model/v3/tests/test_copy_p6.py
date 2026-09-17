@@ -88,6 +88,8 @@ def test_the_live_site_names_only_what_it_computes(cc):
     so the tripwire is inverted rather than deleted. This direction is strictly
     stronger: it fails on any regression, and it also fails if someone deletes a
     FORBIDDEN pattern to make a new claim pass.
+
+    Re-applied after rev 3 and rev 4 both reverted it to the pre-rewrite form.
     """
     if not (ROOT / "index.html").exists():
         pytest.skip("site files not present")
