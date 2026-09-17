@@ -11,7 +11,7 @@ is labelled with it:
 |---|---|
 | *(constitution)* | the Constitution table in `docs/CHANGELOG_v3.md`, locked 2026-09-11 |
 | *(decision N)* | numbered entry in the `docs/CHANGELOG_v3.md` decision log |
-| *(gates)* | `docs/gate_report_v3.0.txt`, the run on the 5,191-row tape |
+| *(gates)* | `docs/gate_report_v3.0.txt` — the pre-bootstrap run on a 5,191-row recompute. **Stale**: the live tape is 5,307 rows to 2026-09-16 and `2026-06-30` now prints a rank, not `PENDING`. Re-run `python3 -m model.v3.validate` for current numbers. |
 | *(etl)* | `etl/daily_v3.py` |
 | *(rules)* | `CLAUDE.md` |
 | *(inferred)* | **not stated in any committed source** — flagged inline, verify against `model/v3/` |
@@ -564,23 +564,31 @@ The 200-week SMA distance (+0.0716) is a **reported comparator, never a
 blocker**, and the gate report says so in the output itself: *"Do not insert the
 200w SMA into V to win a point estimate."*
 
-### The holdout is UNSIGNED
+### The holdout — complete since 2026-09-17, still design-contaminated
 
-*(decision 16; `docs/gate_report_v3.0.txt` footer)*
+*(decision 16; superseded in part by decisions 33 and 34)*
 
 - Window **2025-09-11 → 2026-09-10**, labelled **"holdout / design-contaminated"**,
   **not "unseen"** — expanding CDFs and pillar Σ were both motivated by v2 dying
   at the 2025 ATH, and a one-year embargo cannot un-know that. **Real
   out-of-sample begins at the next ATH after the tape is frozen** *(rules)*.
-- The tape ends 2026-05-23, so **110 days of the window are missing** and the
-  report keeps its `INCOMPLETE` line.
-- **2026-06-30** — the first v3 out-of-sample bottom — prints **`PENDING`**. It is
-  a **named check, never a gate and never a retune date**.
-- **No sentence of the form "validated through 2026" may be written**, and **no
-  Coinbase spot may be spliced into V or G to fill the hole.**
+  That label has not changed and is not softened by the result below.
+- The tape now runs to **2026-09-16 (5,307 rows)**, so the window is complete
+  (n = 365) and the `INCOMPLETE` line is gone.
+- **2026-06-30** — the first v3 out-of-sample bottom — **landed in the bottom
+  quintile: causal rank 0.104.** The holdout trough, 2026-07-01, prints 0.104 on
+  the same footing. It was a **named check, never a gate and never a retune
+  date**, and it stays that way: the model was not adjusted to produce it.
+- It printed `PENDING` for longer than it should have. `validate.py` was scoring
+  a CSV recompute that stopped at 2026-05-23 rather than the committed tape, so
+  the report kept saying `PENDING` after the low had already landed *(decision
+  34)*. Fixed; tape-based gates now read `series/v3.0.jsonl`.
 
-Calling the gate a PASS on 255/365 days would hide the only observation that can
-falsify *"cheap at lows"*.
+**What this does and does not license.** "Cheap at lows" survived its first
+out-of-sample test, on one observation, inside a window the changelog still
+calls design-contaminated. It is one bottom, not a distribution. **No sentence
+of the form "validated through 2026" is licensed by it**, and no Coinbase spot
+may be spliced into V or G.
 
 ---
 

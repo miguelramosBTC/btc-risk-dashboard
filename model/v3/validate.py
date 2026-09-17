@@ -17,6 +17,7 @@ next ATH after v3.0 is frozen.
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -104,6 +105,35 @@ def _spearman(x: pd.Series, y: pd.Series) -> float:
     if len(d) < 3:
         return float("nan")
     return float(d["x"].rank().corr(d["y"].rank()))
+
+
+def read_committed_tape(path: str = "series/v3.0.jsonl") -> pd.Series | None:
+    """`rank_exact` straight off the committed tape, or None if it is not there.
+
+    §12.1 is explicit that reach, order, bottom and the holdout are "evaluated on
+    the committed tape, not on a diagnostic recompute". Recomputing them is not a
+    harmless shortcut: the ETL tops up from the Coin Metrics API while a bare CSV
+    read stops wherever the published dump stops, so the gate report silently
+    scored a *different and staler* series than the one that was committed --
+    5,191 rows to 2026-05-23 against the tape's 5,307 to 2026-09-16 -- and kept
+    reporting the June 2026 low as PENDING after it had landed.
+    """
+    f = Path(path)
+    if not f.exists():
+        return None
+    rows = []
+    with f.open() as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            r = json.loads(line)
+            if r.get("rank_exact") is not None:
+                rows.append((r["asof_date"], float(r["rank_exact"])))
+    if not rows:
+        return None
+    idx = pd.to_datetime([d for d, _ in rows])
+    return pd.Series([v for _, v in rows], index=idx, name="rank_exact")
 
 
 def _quintile_rank(tape: pd.Series, date: str) -> float | None:
@@ -497,7 +527,21 @@ def main(argv=None) -> int:
         return raw, params, P, daily
 
     raw, params, P, daily = build()
-    tape = daily["rank_exact"]          # unrounded; see _quintile_rank
+
+    # Tape-based gates read the COMMITTED tape (§12.1). The pillar-level gates
+    # below legitimately need a recomputation, but reach/order/bottom/holdout
+    # must score the rows that were actually published.
+    committed = read_committed_tape()
+    if committed is not None:
+        tape = committed
+        tape_src = (f"COMMITTED tape series/v3.0.jsonl — {len(tape)} rows, "
+                    f"{tape.index.min().date()} -> {tape.index.max().date()}")
+    else:
+        tape = daily["rank_exact"]
+        tape_src = (f"DIAGNOSTIC RECOMPUTE — no committed tape found; "
+                    f"{len(tape.dropna())} rows, "
+                    f"{daily.index.min().date()} -> {daily.index.max().date()}. "
+                    f"Gate results are NOT evidence about the published series.")
 
     from . import outcome as outcome_mod
     kr = maps.expanding_cdf(raw["kappa"].dropna()).reindex(daily.index)
@@ -517,8 +561,14 @@ def main(argv=None) -> int:
 
     if not quiet:
         print("=" * 78)
-        print(f"v3.0 SHIP GATES — tape {tape.index[0].date()} -> {tape.index[-1].date()} "
-              f"({len(tape)} rows)")
+        print("v3.0 SHIP GATES")
+        print(f"  scored on : {tape_src}")
+        print(f"  pillars   : recomputed from {csv.split('/')[-1]}, "
+              f"{daily.index.min().date()} -> {daily.index.max().date()}")
+        if committed is not None and daily.index.max().date() != tape.index.max().date():
+            print("  NOTE: the pillar recompute ends on a different date than the "
+                  "committed tape.\n        Tape-based gates use the tape; "
+                  "pillar-based gates use the recompute.")
         print("=" * 78)
         for g in gates:
             print(g.report())

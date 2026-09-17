@@ -273,12 +273,28 @@ def test_bootstrap_refuses_stale_inputs(etl, tape, tmp_path):
     a log for "success", or an agent optimising for a green run, will miss it.
     """
     p = tmp_path / "v3.0.jsonl"
+
+    # Construct staleness explicitly rather than inheriting it from whatever
+    # vintage of btc.csv happens to be on disk. CI fetches a FRESH dump, so a
+    # test that assumed the fixture was old would pass locally and fail on the
+    # runner -- or, worse, silently stop testing the guard at all.
+    stale = tape.copy()
+    stale.index = stale.index - pd.Timedelta(days=400)
     with pytest.raises(SystemExit, match="stale inputs"):
-        etl.append_rows(tape, p, bootstrap=True)          # sandbox CSV is 114d old
+        etl.append_rows(stale, p, bootstrap=True)
     assert not p.exists(), "nothing may be written when the guard fires"
+
     # the escape hatch exists, but has to be asked for by name
-    etl.append_rows(tape, p, bootstrap=True, allow_stale=True)
-    assert len(etl.read_tape(p)) == len(tape)
+    etl.append_rows(stale, p, bootstrap=True, allow_stale=True)
+    assert len(etl.read_tape(p)) == len(stale)
+
+    # and a FRESH tape bootstraps without the flag, whatever the CSV vintage
+    fresh = tape.copy()
+    lag = (pd.Timestamp.utcnow().tz_localize(None).normalize() - fresh.index.max()).days
+    fresh.index = fresh.index + pd.Timedelta(days=lag)
+    q = tmp_path / "fresh.jsonl"
+    etl.append_rows(fresh, q, bootstrap=True)
+    assert len(etl.read_tape(q)) == len(fresh)
 
 
 @needs_csv
@@ -354,3 +370,34 @@ def test_local_csv_is_never_preferred_silently(etl):
     code = "\n".join(l for l in src.splitlines() if not l.lstrip().startswith("#"))
     assert "src = csv or CSV_URL" in code
     assert 'Path("btc.csv").exists()' not in code
+
+
+@needs_csv
+def test_gates_score_the_committed_tape_not_a_recompute(etl, tape, tmp_path, monkeypatch):
+    """§12.1: reach/order/bottom are evaluated on the committed tape.
+
+    Recomputing them scored a different, staler series than the one published:
+    the ETL tops up from the API, a bare CSV read stops at the dump. The report
+    said 5,191 rows to 2026-05-23 while the tape held 5,307 to 2026-09-16, and
+    kept calling the June 2026 low PENDING after it had landed.
+    """
+    from model.v3 import validate
+
+    p = tmp_path / "series" / "v3.0.jsonl"
+    p.parent.mkdir()
+    etl.append_rows(tape, p, bootstrap=True, allow_stale=True)
+
+    monkeypatch.chdir(tmp_path)
+    committed = validate.read_committed_tape("series/v3.0.jsonl")
+    assert committed is not None
+    assert len(committed) == len(tape)
+    assert committed.index.max() == tape.index.max()
+    # values must be the unrounded rank, not risk100/100
+    assert not np.allclose(committed.to_numpy(),
+                           (committed * 100).round().to_numpy() / 100)
+
+
+def test_missing_tape_is_labelled_not_silently_recomputed(tmp_path, monkeypatch):
+    from model.v3 import validate
+    monkeypatch.chdir(tmp_path)
+    assert validate.read_committed_tape("series/v3.0.jsonl") is None
