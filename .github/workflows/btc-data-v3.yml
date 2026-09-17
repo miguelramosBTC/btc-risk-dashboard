@@ -5,7 +5,8 @@
 # data.js, index.html or app.js: until the Phase 5 cutover the dashboard, the
 # API, the email engine and the X bot all still read v2.
 #
-# What it commits: series/v3.0.jsonl (append-only) and series/v3.0_last90.json.
+# What it commits: series/v3.0.jsonl (append-only), series/v3.0_last90.json,
+# series/v3.0_chart.json (the public chart series) and docs/gate_report_v3.0.txt.
 #
 # Schedule (UTC), per the roadmap §10:
 #   06:00  pull Coin Metrics community CSV + API top-up
@@ -99,7 +100,8 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add series/v3.0.jsonl series/v3.0_last90.json docs/gate_report_v3.0.txt
+          git add series/v3.0.jsonl series/v3.0_last90.json \
+                  series/v3.0_chart.json docs/gate_report_v3.0.txt
           if git diff --staged --quiet; then
             echo "No new v3 row today."
           else

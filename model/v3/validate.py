@@ -107,7 +107,30 @@ def _spearman(x: pd.Series, y: pd.Series) -> float:
     return float(d["x"].rank().corr(d["y"].rank()))
 
 
-def read_committed_tape(path: str = "series/v3.0.jsonl") -> pd.Series | None:
+def read_committed_rows(path: str = "series/v3.0.jsonl") -> pd.DataFrame | None:
+    """Every committed row, indexed by `asof_date`, or None if the tape is absent.
+
+    One parse. The accessors below slice it rather than re-reading 4.9 MB of
+    JSONL once per gate.
+    """
+    f = Path(path)
+    if not f.exists():
+        return None
+    rows = []
+    with f.open() as fh:
+        for line in fh:
+            line = line.strip()
+            if line:
+                rows.append(json.loads(line))
+    if not rows:
+        return None
+    d = pd.DataFrame(rows)
+    d.index = pd.to_datetime(d["asof_date"])
+    return d
+
+
+def read_committed_tape(path: str = "series/v3.0.jsonl",
+                        rows: pd.DataFrame | None = None) -> pd.Series | None:
     """`rank_exact` straight off the committed tape, or None if it is not there.
 
     §12.1 is explicit that reach, order, bottom and the holdout are "evaluated on
@@ -118,22 +141,44 @@ def read_committed_tape(path: str = "series/v3.0.jsonl") -> pd.Series | None:
     5,191 rows to 2026-05-23 against the tape's 5,307 to 2026-09-16 -- and kept
     reporting the June 2026 low as PENDING after it had landed.
     """
-    f = Path(path)
-    if not f.exists():
+    d = read_committed_rows(path) if rows is None else rows
+    if d is None or "rank_exact" not in d.columns:
         return None
-    rows = []
-    with f.open() as fh:
-        for line in fh:
-            line = line.strip()
-            if not line:
-                continue
-            r = json.loads(line)
-            if r.get("rank_exact") is not None:
-                rows.append((r["asof_date"], float(r["rank_exact"])))
-    if not rows:
+    s = pd.to_numeric(d["rank_exact"], errors="coerce").dropna()
+    s.name = "rank_exact"
+    return s if len(s) else None
+
+
+def read_committed_pillars(path: str = "series/v3.0.jsonl",
+                           rows: pd.DataFrame | None = None) -> pd.DataFrame | None:
+    """The published V/G/T/S and price, straight off the committed tape.
+
+    The collinearity gate used to correlate a *parallel calculation* of the
+    pillars, read from the Coin Metrics CSV dump. That dump has been frozen at
+    2026-05-24 since May -- only the API top-up reaches the present -- so the
+    gate was permanently scoring four months behind the tape, and would have kept
+    falling further behind indefinitely. It is a standing condition, not
+    one-off staleness.
+
+    The tape already carries V, G, T and S on every row, so no recompute is
+    needed. Reading them is also more faithful to §12.1: it measures the pillars
+    that were actually *published* rather than a re-derivation of them. Verified
+    identical to the recompute over the 4,390-row overlap -- max |difference|
+    5e-7, which is exactly the half-ulp of the 6-decimal rounding `_row_to_json`
+    applies on the way out.
+
+    Returns None if the tape does not carry the columns (an older tape, or a
+    v3.1 frame that drops a diagnostic), so the caller can fall back and *say* it
+    fell back.
+    """
+    d = read_committed_rows(path) if rows is None else rows
+    if d is None:
         return None
-    idx = pd.to_datetime([d for d, _ in rows])
-    return pd.Series([v for _, v in rows], index=idx, name="rank_exact")
+    need = [*WEIGHTS, "price_usd"]
+    if any(c not in d.columns for c in need):
+        return None
+    out = d[need].apply(pd.to_numeric, errors="coerce")
+    return out if out[list(WEIGHTS)].dropna(how="all").shape[0] else None
 
 
 def _quintile_rank(tape: pd.Series, date: str) -> float | None:
@@ -228,18 +273,25 @@ def gate_low_vol_rich(pillars_mod, maps_mod) -> Gate:
     return g
 
 
-def gate_collinearity(P: pd.DataFrame, price: pd.Series) -> Gate:
+def gate_collinearity(P: pd.DataFrame, price: pd.Series,
+                      source: str = "diagnostic recompute") -> Gate:
     """Family collinearity on the Mode A common live span, pairs in {V, G, T}.
 
     Control: the same BTC log price that feeds T, first-differenced and aligned to
     the score date; Pearson on the residuals of ds on dlog P. If someone later
     swaps in a "smarter" control (Mayer, or V itself), that is a NEW GATE and a
     new version -- not a tweak.
+
+    `P` and `price` are the COMMITTED pillars and the committed `price_usd` when
+    the tape carries them (see `read_committed_pillars`). The maths below does not
+    care where the columns came from, and deliberately does not look: swapping the
+    source is a change of *which* pillars are measured, never of *how*.
     """
     g = Gate(f"Collinearity — partial |r(ds_i, ds_j | dlog P)| < {COLLINEARITY_PARTIAL_MAX:.2f}"
              f" on {'/'.join(COLLINEARITY_PAIRS)}")
     X = P[list(WEIGHTS)].dropna()
     g.note(f"Mode A common live span {X.index[0].date()} -> {X.index[-1].date()}  n={len(X)}")
+    g.note(f"pillars read from: {source}")
 
     dX = X.diff().dropna()
     dp = np.log(price).reindex(X.index).diff().reindex(dX.index)
@@ -488,10 +540,14 @@ def holdout_table(tape: pd.Series, window=HOLDOUT) -> str:
 
 
 def run_all(tape, P, raw, maps_mod, pillars_mod, recompute,
-            outcome_bundle=None, ensemble_mod=None) -> tuple[list[Gate], str]:
+            outcome_bundle=None, ensemble_mod=None,
+            collin=None) -> tuple[list[Gate], str]:
+    # `collin` is (pillars, price, source-label). Default: the recompute, which is
+    # what the tests pass and what a tape-less checkout has to fall back to.
+    cP, cprice, csrc = collin or (P, raw['price'], "diagnostic recompute")
     gates = [gate_reach(tape), gate_order(tape), gate_bottom(tape),
              gate_low_vol_rich(pillars_mod, maps_mod),
-             gate_collinearity(P, raw['price']),
+             gate_collinearity(cP, cprice, csrc),
              gate_nested_baseline(tape, raw, maps_mod), gate_rewrite_probe(recompute)]
     if outcome_bundle is not None:
         gates.append(gate_outcome_layer(*outcome_bundle))
@@ -510,14 +566,50 @@ def main(argv=None) -> int:
     argv = argv or sys.argv[1:]
     quiet = "--quiet" in argv
     csv = next((a.split("=", 1)[1] for a in argv if a.startswith("--csv=")), None)
-    if csv is None:
-        # A fresh CI checkout has no local snapshot; fall back to the community
-        # dump so the gate report runs in Actions exactly as it does locally.
-        csv = ("btc.csv" if Path("btc.csv").exists() else
-               "https://raw.githubusercontent.com/coinmetrics/data/master/csv/btc.csv")
 
+    # The ensemble, growth-specification and outcome gates rebuild ALTERNATIVES
+    # from raw series, so unlike the others they genuinely cannot read the tape.
+    # They get the same topped-up frame the ETL writes the tape from -- the CSV
+    # dump alone has been frozen at 2026-05-24 since May, so a bare read scores
+    # four months behind the published series and always will. One loader, in
+    # etl/inputs.py, so there is no second code path onto a staler source.
+    #
+    # The import is LAZY and inside main() on purpose: validate.py is a reporting
+    # tool, not part of the compute path, and `import model.v3.validate` must not
+    # pull etl code into the tests or into anything under model/. If it is
+    # unavailable we degrade to a bare CSV read and SAY SO in the header -- a
+    # silent downgrade to staler inputs is the whole bug being fixed here.
+    # This process's stdout IS the committed gate report (the workflow tees it
+    # into docs/gate_report_v3.0.txt). The loader logs its source and top-up to
+    # stdout, which is right for the ETL's job log and wrong here, so it is
+    # redirected to stderr: still visible in the Actions log, never in the
+    # artifact.
+    import contextlib
+
+    loader_note = None
+    try:
+        from etl.inputs import load_inputs
+        with contextlib.redirect_stdout(sys.stderr):
+            df_raw = load_inputs(csv, use_api=("--no-api" not in argv))
+        src_label = (csv or "coinmetrics dump") + " + API top-up"
+        if csv is None and df_raw.attrs.get("api_vintage") is None:
+            src_label = "coinmetrics dump (API top-up returned nothing)"
+    except ImportError as e:                                  # noqa: BLE001
+        loader_note = (f"etl.inputs unavailable ({e}); fell back to a bare CSV "
+                       "read with NO API top-up. Recompute-based gates are "
+                       "scored on the dump's vintage, which lags the tape.")
+        csv_path = csv or ("btc.csv" if Path("btc.csv").exists() else
+                           "https://raw.githubusercontent.com/coinmetrics/"
+                           "data/master/csv/btc.csv")
+        df_raw = pd.read_csv(csv_path, parse_dates=["time"])
+        src_label = f"{csv_path.split('/')[-1]} (CSV only)"
+
+    # Built ONCE, then recomputed from the SAME frame. gate_rewrite_probe calls
+    # recompute() twice and asserts the two are identical; re-fetching would make
+    # a determinism gate depend on two API responses agreeing, which is a
+    # different and much weaker claim.
     def build():
-        df = features.prepare_frame(pd.read_csv(csv, parse_dates=["time"]))
+        df = features.prepare_frame(df_raw)
         raw = features.build_raw(df)
         params = growth.growth_params(raw["price"])
         P = pillars.build_pillars(raw, params)
@@ -531,7 +623,8 @@ def main(argv=None) -> int:
     # Tape-based gates read the COMMITTED tape (§12.1). The pillar-level gates
     # below legitimately need a recomputation, but reach/order/bottom/holdout
     # must score the rows that were actually published.
-    committed = read_committed_tape()
+    rows = read_committed_rows()
+    committed = read_committed_tape(rows=rows)
     if committed is not None:
         tape = committed
         tape_src = (f"COMMITTED tape series/v3.0.jsonl — {len(tape)} rows, "
@@ -542,6 +635,19 @@ def main(argv=None) -> int:
                     f"{len(tape.dropna())} rows, "
                     f"{daily.index.min().date()} -> {daily.index.max().date()}. "
                     f"Gate results are NOT evidence about the published series.")
+
+    # Collinearity needs no recompute at all: V, G, T and S travel on every
+    # committed row, so the gate can measure the pillars that were PUBLISHED.
+    cpill = read_committed_pillars(rows=rows)
+    if cpill is not None:
+        collin = (cpill, cpill["price_usd"], "COMMITTED tape (published pillars)")
+        # No dates here: the gate prints its own Mode A span, which is the
+        # dropna'd common-live window and starts later than the tape does.
+        collin_src = "COMMITTED tape — published V/G/T/S, no recompute"
+    else:
+        collin = (P, raw["price"], f"diagnostic recompute from {src_label}")
+        collin_src = (f"DIAGNOSTIC RECOMPUTE from {src_label} — the tape carries no "
+                      f"V/G/T/S columns")
 
     from . import outcome as outcome_mod
     kr = maps.expanding_cdf(raw["kappa"].dropna()).reindex(daily.index)
@@ -556,19 +662,23 @@ def main(argv=None) -> int:
                              ensemble_mod=(None if "--no-ensemble" in argv
                                            else __import__(
                                                "model.v3.ensemble",
-                                               fromlist=["ensemble"])))
+                                               fromlist=["ensemble"])),
+                             collin=collin)
     failed = [g for g in gates if not g.ok]
 
     if not quiet:
         print("=" * 78)
         print("v3.0 SHIP GATES")
         print(f"  scored on : {tape_src}")
-        print(f"  pillars   : recomputed from {csv.split('/')[-1]}, "
+        print(f"  collinear : {collin_src}")
+        print(f"  alt-specs : rebuilt from {src_label}, "
               f"{daily.index.min().date()} -> {daily.index.max().date()}")
-        if committed is not None and daily.index.max().date() != tape.index.max().date():
-            print("  NOTE: the pillar recompute ends on a different date than the "
-                  "committed tape.\n        Tape-based gates use the tape; "
-                  "pillar-based gates use the recompute.")
+        if loader_note:
+            print("  WARNING: " + "\n           ".join(_wrap(loader_note, 66)))
+        elif committed is not None and daily.index.max().date() != tape.index.max().date():
+            print("  NOTE: the ensemble/growth-spec/outcome gates rebuild alternatives\n"
+                  "        from raw series, so they end at the input vintage rather\n"
+                  "        than at the tape's last row.")
         print("=" * 78)
         for g in gates:
             print(g.report())

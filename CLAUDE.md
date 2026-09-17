@@ -39,8 +39,10 @@ it earns **+17.1 %** BTC-per-dollar over flat DCA on four-year windows, against
 4. **Causality is structural.** No value at date *t* may use a print with
    timestamp > *t*. Every map is tested for it, including the detectors.
 5. **Name only what you compute** (P6). `tools/check_copy.py` enforces it and
-   currently fails: 39 user-facing strings name series no version of this model
-   has ever computed. Fix the sentences; do not add a waiver list.
+   now exits 0: the 39 defect-G strings and the 92 describing v2 machinery were
+   rewritten in both languages. Fix the sentences; do not add a waiver list, and
+   do not delete a pattern from `FORBIDDEN` to make a new claim pass —
+   `test_copy_p6.py` asserts the checker is still armed.
 6. **Retired weight is retired.** T_dd's 0.0675 and M's 0.10 were removed, not
    recycled. Active family weight is 0.90 and is disclosed on every row.
 7. **Pre-register before measuring.** The ensemble grid, the growth
@@ -112,3 +114,32 @@ tree is one `git add -A` away from committing a fixture as production data.
 Likewise `load_inputs` defaults to the live Coin Metrics dump and uses a local
 CSV only when one is passed by name. A stray `btc.csv` must never silently
 freeze the daily job on stale inputs while every log line reads "success".
+
+## One input loader, in `etl/inputs.py`
+
+Everything that needs the model's inputs goes through `load_inputs`. There was a
+second path — `validate.py` called `pd.read_csv` directly — and it read a
+**staler source**: the Coin Metrics dump has been frozen at 2026-05-24 since
+May, so every recompute-based gate scored four months behind the tape and would
+have kept doing so indefinitely. That is a standing condition, not one-off
+staleness, and it is the class of bug a duplicated loader produces.
+
+`model/v3/` must not import from `etl/`. `validate.py` is the single exception,
+at the edge: it is a reporting tool, nothing under `model/` imports it except
+its own tests, and the import is **lazy, inside `main()`** — so `import
+model.v3.validate` still pulls no ETL code. `etl/inputs.py` imports only stdlib,
+pandas and `model.v3.constants` (itself import-free), which keeps that arrow
+cycle-free. If the lazy import fails, the report degrades to a bare CSV read and
+**says so in its header**; a silent downgrade to staler inputs is the bug.
+
+## Gates read the committed tape wherever the tape can answer
+
+Reach, order, bottom, the holdout **and collinearity** score the committed rows.
+The tape carries `V`, `G`, `T`, `S` and `price_usd` on every row, so
+collinearity needs no recompute at all — and reading them measures the pillars
+that were *published* rather than a parallel calculation of them.
+
+Only the ensemble, growth-specification and outcome gates genuinely cannot:
+they rebuild *alternatives* from raw series. Those get the topped-up frame from
+`etl/inputs.py`, and the gate report prints the source of each so a silent swap
+is visible.

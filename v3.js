@@ -17,6 +17,7 @@
   "use strict";
 
   var WINDOW_URL = "/series/v3.0_last90.json";
+  var CHART_URL = "/series/v3.0_chart.json";
   var MAX_STALE_DAYS = 4;          /* older than this -> do not take over the gauge */
 
   var V3 = {
@@ -25,7 +26,15 @@
     rows: [],
     last: null,
     support: null,
-    ready: null
+    ready: null,
+
+    /* Full published history for the price-and-risk chart, fetched separately.
+     * Separate on purpose: the gauge must not wait on 135 KB, and a chart that
+     * fails to load must never blank the number. `r` is risk100 -- an INTEGER
+     * 0-100 percentile, not the 0-1 v2 blend. */
+    chart: null,
+    chartReason: "not loaded",
+    chartReady: null
   };
 
   function daysBetween(aIso, bIso) {
@@ -203,6 +212,40 @@
     return V3.ready;
   }
 
+  /* ---- the published chart series ----------------------------------------
+   * Four parallel arrays straight off the committed tape: t (asof_date), p
+   * (USD close), r (risk100, integer 0-100 percentile), c (confidence 0-10).
+   *
+   * This exists because the site had no v3 history to plot, so the chart kept
+   * drawing v2's blend under a v3 gauge -- 2025-10-06 read 0.556 there against
+   * v3's 80. Independent of the window fetch: a chart failure leaves the gauge
+   * alone, and V3.active is never touched here.
+   */
+  function loadChart() {
+    V3.chartReady = fetch(CHART_URL, { cache: "no-store" })
+      .then(function (r) {
+        if (!r.ok) throw new Error("chart " + r.status);
+        return r.json();
+      })
+      .then(function (doc) {
+        var ok = doc && doc.t && doc.p && doc.r && doc.c && doc.t.length &&
+                 doc.t.length === doc.p.length &&
+                 doc.t.length === doc.r.length &&
+                 doc.t.length === doc.c.length;
+        if (!ok) throw new Error("chart series malformed or ragged");
+        V3.chart = { t: doc.t, p: doc.p, r: doc.r, c: doc.c,
+                     schema: doc.schema_version, n: doc.t.length };
+        V3.chartReason = "ok";
+        return V3.chart;
+      })
+      .catch(function (e) {
+        V3.chart = null;
+        V3.chartReason = String(e && e.message ? e.message : e);
+        return null;
+      });
+    return V3.chartReady;
+  }
+
   /* Highest and lowest risk any price can produce while Sigma is held. */
   function reachableRange() {
     if (!V3.active) return null;
@@ -219,7 +262,8 @@
   V3.priceForRisk = priceForRisk;
   V3.intradayOverlay = intradayOverlay;
   V3.load = load;
+  V3.loadChart = loadChart;
 
   global.V3 = V3;
-  if (typeof document !== "undefined") load();
+  if (typeof document !== "undefined") { load(); loadChart(); }
 })(typeof window !== "undefined" ? window : globalThis);

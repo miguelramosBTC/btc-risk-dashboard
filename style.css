@@ -343,6 +343,11 @@ code{font-family:var(--mono);font-size:.85em;background:var(--card2);border:1px 
   position:relative;height:10px;border-radius:999px;
   background:linear-gradient(90deg,#1e6feb 0%,#46b3c9 22%,#e8c84a 48%,#ec7a1c 70%,#d63d2e 88%,#7d1620 100%);
 }
+/* v3 ranked scale: stops on the four published quintile bands, so the legend
+   agrees with the gauge, the email and the bot instead of with v2's blend. */
+.strip.v3{
+  background:linear-gradient(90deg,#3fb950 0%,#46b3c9 20%,#ec7a1c 60%,#d63d2e 80%,#7d1620 100%);
+}
 .strip .needle{position:absolute;top:-5px;bottom:-5px;width:3px;border-radius:2px;background:#fff;box-shadow:0 0 0 2.5px rgba(10,12,18,.85)}
 .strip-lbl{display:flex;justify-content:space-between;color:var(--mut2);font-size:10.5px;font-family:var(--mono);margin-top:6px}
 

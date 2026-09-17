@@ -166,8 +166,8 @@
 <section class="band home" id="chart">
   <div class="wrap reveal">
     <div class="sec-head">
-      <h2 class="sec-h" data-i18n="chart_h">Precio y riesgo desde 2011</h2>
-      <p class="sec-d" data-i18n="chart_d">Precio de Bitcoin (escala logarítmica) y el score de riesgo 0-1. Se actualiza con el precio en vivo.</p>
+      <h2 class="sec-h" id="chartHead" data-i18n="chart_h">Precio y riesgo desde 2011</h2>
+      <p class="sec-d" id="chartDesc" data-i18n="chart_d">Precio de Bitcoin (escala logarítmica) y el score de riesgo 0-1. Se actualiza con el precio en vivo.</p>
     </div>
 
     <div class="chart-card">
@@ -190,12 +190,12 @@
       </div>
       <div id="chartPlot"></div>
       <div class="chart-foot">
-        <span class="legend" id="chartLegend"><span><i style="background:#5b8def"></i><span data-i18n="leg_price">Precio</span></span><span><i style="background:#ef5366"></i><span data-i18n="leg_risk">Riesgo</span></span></span>
+        <span class="legend" id="chartLegend"><span><i style="background:#5b8def"></i><span data-i18n="leg_price">Precio</span></span><span><i style="background:#ef5366"></i><span id="legRisk" data-i18n="leg_risk">Riesgo</span></span></span>
         <div class="strip-wrap" id="stripWrap" style="display:none">
-          <div class="strip">
+          <div class="strip" id="stripBar">
             <span class="needle" id="stripNeedle"></span>
           </div>
-          <div class="strip-lbl"><span>0</span><span>0.3</span><span>0.6</span><span>1.0</span></div>
+          <div class="strip-lbl" id="stripLbl"><span>0</span><span>0.3</span><span>0.6</span><span>1.0</span></div>
         </div>
       </div>
     </div>
