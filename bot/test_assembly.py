@@ -95,6 +95,69 @@ check("politicians 'buy votes' is fine",
       bot.long_text_ok(good + " Politicians buy votes with printed money.", 40) == "")
 check("too-short flagged", "too short" in bot.long_text_ok("word " * 60, 250))
 
+# ---- 4c. facts guard ---------------------------------------------------------
+# The real failure this exists for: on 2026-09-17 the generated body read
+# "0.32 today ... more extended than 32 percent of its history to 2026-03-14"
+# against a row dated 2026-09-16. The value and the percentage were right; the
+# date was the FEW-SHOT EXAMPLE'S, copied out of the prompt. Length, refusal and
+# advice were validated from the start. The numbers were not.
+print("[4c] facts guard")
+_ok = ("The model reads 0.32 today, below mid, more extended than 32% of its "
+       "own history. Not a signal, not a forecast, just a number. " * 6)
+check("matching facts pass", bot.facts_ok(_ok, 0.32, 32) == "")
+
+_dated = _ok + " The reading is as of 2026-03-14."
+res = bot.facts_ok(_dated, 0.32, 32)
+check("rejects the exact real-world regression", "2026-03-14" in res, res)
+check("  ... and names it a date problem", "writes a date" in res, res)
+
+res = bot.facts_ok(_ok.replace("0.32 today", "0.41 today"), 0.32, 32)
+check("rejects a wrong reading value", "0.41" in res and "not 0.32" in res, res)
+
+res = bot.facts_ok(_ok.replace("32% of its", "41% of its"), 0.32, 32)
+check("rejects a wrong percentile", "41%" in res and "not 32%" in res, res)
+
+# must NOT fire on unrelated numbers a macro column legitimately uses
+_macro = (_ok + " The central bank moved rates by 0.25 percentage points, and "
+          "inflation printed at 3% on the year, per Reuters.")
+check("tolerates unrelated decimals and percentages",
+      bot.facts_ok(_macro, 0.32, 32) == "", bot.facts_ok(_macro, 0.32, 32))
+
+check("empty body is not a facts failure", bot.facts_ok("", 0.32, 32) == "")
+check("a date in any ISO shape is caught",
+      bot.facts_ok(_ok + " on 2026-9-8 they voted", 0.32, 32) != "")
+
+# the guard must be reachable from the generator, and never waived
+import inspect as _insp
+_gb = _insp.getsource(bot.generate_body)
+check("generate_body checks facts", "facts_ok" in _gb)
+check("the short-but-usable tolerance re-checks facts",
+      _gb.count("facts_ok") >= 2, f"facts_ok appears {_gb.count('facts_ok')}x")
+
+# ---- 4d. the date is withheld from the LLM -----------------------------------
+print("[4d] date withheld from the generator")
+_hist_dated = bot.meaning_line(0.32, "2026-09-16", "v3")
+_hist_free = bot.meaning_line(0.32, "2026-09-16", "v3", with_date=False)
+check("header variant carries the date", "2026-09-16" in _hist_dated)
+check("LLM variant does not", "2026-09-16" not in _hist_free, _hist_free)
+check("both state the same percentile", "32%" in _hist_dated and "32%" in _hist_free)
+check("v2 variant also drops the date",
+      "2026-09-16" not in bot.meaning_line(0.32, "2026-09-16", "v2", with_date=False))
+
+_umsg = bot.build_long_user(0.32, "BELOW MID", _hist_free, "2026-09-16", [], False)
+check("user message carries no exact date",
+      not bot.ISO_DATE_PAT.search(_umsg), _umsg[:120])
+check("user message keeps a month anchor", "September 2026" in _umsg, _umsg[:120])
+check("few-shot carries no date to copy",
+      not bot.ISO_DATE_PAT.search(bot.LONG_FEWSHOT_USER)
+      and not bot.ISO_DATE_PAT.search(bot.LONG_FEWSHOT_ASSISTANT))
+check("system prompt forbids dates",
+      "NEVER write a calendar date" in bot.LONG_SYSTEM_PROMPT)
+
+# the header still publishes the date, from the committed row
+_l1, _l2 = bot.header_lines(0.32, "2026-09-16", _hist_dated, "", "v3")
+check("header line still shows the as-of date", "as of" in _l2 and "2026" in _l2, _l2)
+
 # ---- 4b. discovery tags -------------------------------------------------------
 print("[4b] compose_tags")
 import datetime as _dt
