@@ -48,8 +48,12 @@ Two colour ramps, because they answer different questions:
   both ends and near-symmetrically: **deep marine below 0.12** (6.1% of days)
   and **intense red above 0.95** (7.2%), deepening to navy at 0.00 and to a
   dark red at 1.00. Everything between is stretched so the middle of the range
-  actually travels — azure 0.12, teal 0.30, green 0.50, yellow 0.68, orange
-  0.84 — monotonic cool-to-hot, so warmth still reads as extension at a glance.
+  actually travels, and it carries **no green** — azure 0.12, teal 0.30, pale
+  blue-grey 0.46, cream 0.60, yellow 0.72, orange 0.86 — monotonic cool-to-hot,
+  so warmth still reads as extension at a glance. Removing green is not just
+  dropping a stop: teal interpolated straight to yellow passes *through* green,
+  so the path keeps blue at or above green until red takes over, pivoting
+  through a near-neutral warm grey at 0.53. Checked by hue angle, not by eye.
   Two earlier versions were wrong in the same way at opposite ends: v2's stops
   reddened 15.4% of history, and the first v3 cold end left **0.00–0.40 — 29.0%
   of all history, 1,540 days — as one flat marine blue**, so 0.05 and 0.38

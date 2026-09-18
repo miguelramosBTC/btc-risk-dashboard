@@ -261,6 +261,19 @@ No v3 compute exists yet. v2 remains the public gauge.
 
     This is a presentation choice with a real cost, so it is stated rather than buried: on a short window the extension line's *shape* is now readable and its *height* is no longer directly comparable to another window's. The axis labels are the guard. If that trade is ever judged wrong, one constant reverts it — `R_MIN_SPAN = 1` pins the axis back to the full scale.
 
+48. **Green is out of the heat ramp, and the two ends are untouched.** Green occupied the middle of the scale and carried no meaning the rest of the ramp did not already carry: cool is cheap, warm is extended, and a green band in between reads as "safe" on a percentile that says nothing of the kind. Removing it is not simply deleting a stop — interpolating teal `(70,179,201)` straight to yellow `(232,200,74)` passes **through** green, because G stays high while B falls and R has not yet overtaken. The path therefore keeps B ≥ G until R takes over, pivoting through a near-neutral at 0.53 (`192,204,182`, saturation 0.11 — a warm grey, not a colour).
+
+    Verified by **hue angle rather than by eye**, sampling the ramp at 1,001 points and counting anything in the green band (hue 80–170° with saturation above 0.25), then weighting by the tape's actual 5,308 days:
+
+    | hue band | share of the ramp | share of the tape's days |
+    |---|---|---|
+    | green | 23.4% → **0.0%** | 17.0% → **0.0%** |
+    | yellow | 11.3% → 19.1% | 17.1% → 24.4% |
+    | orange | 16.1% → 13.9% | 24.3% → 21.9% |
+    | yellow + orange | 27.2% → **32.9%** | 41.4% → **46.3%** |
+
+    The stops at 0, 0.12, 0.95 and 1.00 are byte-identical to before, so the extremes keep exactly the shares decision 44 set: **deep marine ≤ 0.12 is 6.09% of days, intense red ≥ 0.95 is 7.22%**. Confirmed in a browser against the live ramp: 0 of 1,001 samples and 0 of the 26 drawn buckets fall in the green band.
+
 ### Ship gates (spec §12.1) — `model/v3/validate.py` exits non-zero on any failure
 
 Full causal tape: **reach** (2013-12-04, 2017-12-17, 2021-04-14, 2021-11-10, 2024-03-13, 2025-10-06 in the top quintile of the tape up to that day) · **order** (2025-10-06 not below 2024-03-13 without a written G/Σ residual explanation) · **bottom** (2015-01-14, 2018-12-15, 2022-11-21 in the bottom quintile) · **low-vol rich** (synthetic: high V + falling κ does not lower Σ) · **collinearity** (max |r| among mapped pillars ≤ 0.80) · **nested baseline** (walk-forward Spearman of −risk vs next-90-day return, 2014 → embargo, beats Mayer percentile alone, MVRV percentile alone, 200-week-SMA distance; if MVRV alone wins, strip ornament pillars, never raise w_V above 0.40) · **rewrite probe** (compute twice, committed rows byte-stable; a v3.1 weight change does not touch `v3.0.jsonl`). Second table, holdout year only, no parameter chosen from it.
