@@ -352,7 +352,10 @@ code{font-family:var(--mono);font-size:.85em;background:var(--card2);border:1px 
 }
 .strip .needle{position:absolute;top:-5px;bottom:-5px;width:3px;border-radius:2px;background:#fff;box-shadow:0 0 0 2.5px rgba(10,12,18,.85)}
 .strip-lbl{display:flex;justify-content:space-between;color:var(--mut2);font-size:10.5px;font-family:var(--mono);margin-top:6px}
-.strip-note{color:var(--mut2);font-size:10.5px;line-height:1.45;margin-top:5px;max-width:420px}
+/* series show/hide: an off chip and its dimmed legend entry */
+.chip[aria-pressed="false"]{opacity:.5}
+.chip:disabled{opacity:.35;cursor:default}
+.legend .leg-off{opacity:.32}
 
 /* api panel + inputs shared */
 .suggest-row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}

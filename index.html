@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/style.css?v=12">
+<link rel="stylesheet" href="/style.css?v=13">
 </head>
 <body>
 <header class="topbar">
@@ -182,6 +182,10 @@
           <button class="rbtn" data-range="3m" data-i18n="rng_3m">3M</button>
         </div>
         <div class="chart-tools">
+          <!-- Which series to draw. Either can be hidden to read the other on
+               its own; the last visible one cannot be switched off. -->
+          <button class="chip chip-on" id="btnShowPrice" aria-pressed="true" data-i18n="chart_show_price">Precio</button>
+          <button class="chip chip-on" id="btnShowRisk" aria-pressed="true" data-i18n="chart_show_risk">Riesgo</button>
           <button class="chip" id="btnRefresh" data-i18n="chart_refresh">↻ Actualizar precio</button>
           <button class="chip" id="btnScale" data-i18n="chart_lin">Linear scale</button>
           <button class="chip" id="btnHeat" data-i18n="chart_heat">Risk heat map</button>
@@ -190,15 +194,12 @@
       </div>
       <div id="chartPlot"></div>
       <div class="chart-foot">
-        <span class="legend" id="chartLegend"><span><i style="background:#5b8def"></i><span data-i18n="leg_price">Precio</span></span><span><i style="background:#ef5366"></i><span id="legRisk" data-i18n="leg_risk">Riesgo</span></span></span>
+        <span class="legend" id="chartLegend"><span id="legPriceItem"><i style="background:#5b8def"></i><span data-i18n="leg_price">Precio</span></span><span id="legRiskItem"><i style="background:#ef5366"></i><span id="legRisk" data-i18n="leg_risk">Riesgo</span></span></span>
         <div class="strip-wrap" id="stripWrap" style="display:none">
           <div class="strip" id="stripBar">
             <span class="needle" id="stripNeedle"></span>
           </div>
           <div class="strip-lbl" id="stripLbl"><span>0</span><span>0.3</span><span>0.6</span><span>1.0</span></div>
-          <!-- v3 only: says where the intense red starts, so the ramp is not
-               left to be guessed at. Populated by syncChartCopy(). -->
-          <div class="strip-note" id="stripNote" hidden></div>
         </div>
       </div>
     </div>
@@ -711,6 +712,6 @@
      leaves V3.active false if that file is missing, malformed or stale, in which
      case app.js keeps serving v2 exactly as before. -->
 <script src="/v3.js?v=2"></script>
-<script src="/app.js?v=17"></script>
+<script src="/app.js?v=18"></script>
 </body>
 </html>

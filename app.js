@@ -73,12 +73,12 @@ const I18N = {
   chart_eye:"Histórico en vivo", chart_h:"Precio y riesgo desde 2011",
   chart_d:"Precio de Bitcoin (escala logarítmica) y el score de riesgo 0-1. Se actualiza con el precio en vivo.",
   chart_refresh:"↻ Actualizar precio", chart_auto:"Auto (5 min)", leg_price:"Precio", leg_risk:"Riesgo",
+  chart_show_price:"Precio", chart_show_risk:"Extensión",
   /* v3 chart: la escala cambió. 0-100 es un percentil de su propia historia,
      no el score 0-1 de v2 y nunca una probabilidad. */
   chart_h_v3:"Precio y extensión desde 2012",
   chart_d_v3:"Precio de Bitcoin (escala logarítmica) y la lectura publicada de 0 a 1: el percentil de lo extendido que estaba el mercado frente a su propia historia hasta esa mañana \u2014 el mismo número que marca la aguja. La línea de extensión termina en la última fila publicada; el precio sigue en vivo.",
   leg_risk_v3:"Extensión (0-1)",
-  chart_heat_v3:"Mapa de calor: el rojo intenso queda reservado para los extremos de ciclo (0,95 y por encima, un 7 % de los días).",
   chart_y2_v3:"Extensión", chart_y2_v2:"Riesgo", chart_tip_v3:"Extensión",
   rng_all:"Todo", rng_10y:"10A", rng_5y:"5A", rng_3y:"3A", rng_1y:"1A", rng_6m:"6M", rng_3m:"3M",
   trust_open:"Modelo abierto y transparente", trust_data:"Solo datos públicos (Coin Metrics)", trust_advice:"Nunca es asesoramiento financiero",
@@ -320,12 +320,12 @@ const I18N = {
   chart_eye:"Live history", chart_h:"Price and risk since 2011",
   chart_d:"Bitcoin price (log scale) and the 0-1 risk score. Updates with the live price.",
   chart_refresh:"↻ Refresh price", chart_auto:"Auto (5 min)", leg_price:"Price", leg_risk:"Risk",
+  chart_show_price:"Price", chart_show_risk:"Extension",
   /* v3 chart: the scale changed. 0-100 is a percentile of its own history, not
      v2's 0-1 score, and never a probability. */
   chart_h_v3:"Price and extension since 2012",
   chart_d_v3:"Bitcoin price (log scale) and the published 0-1 reading: the percentile of how extended the market was versus its own history up to that morning \u2014 the same number the needle shows. The extension line ends at the last published row; the price stays live.",
   leg_risk_v3:"Extension (0-1)",
-  chart_heat_v3:"Heat map: intense red is reserved for the cycle extremes (0.95 and above, about 7% of days).",
   chart_y2_v3:"Extension", chart_y2_v2:"Risk", chart_tip_v3:"Extension",
   rng_all:"All", rng_10y:"10Y", rng_5y:"5Y", rng_3y:"3Y", rng_1y:"1Y", rng_6m:"6M", rng_3m:"3M",
   trust_open:"Open & transparent model", trust_data:"Public data only (Coin Metrics)", trust_advice:"Never financial advice",
@@ -822,6 +822,33 @@ function heatTraces(){
   return buckets.map((bk,k)=>({x:bk.x,y:bk.y,yaxis:"y",mode:"lines",connectgaps:false,
     line:{color:heatColor((k+0.5)/N),width:3.2},hoverinfo:"skip"}));
 }
+/* Which of the two series to draw. The last visible one cannot be switched off:
+   an empty plot is never what the click meant. The heat map needs both by
+   construction -- it IS the price line coloured by extension -- so the toggles
+   apply to the line view only. */
+let SHOW={price:true,risk:true};
+function setShow(which){
+  const other=which==="price"?"risk":"price";
+  if(SHOW[which] && !SHOW[other]) return;     /* would hide everything */
+  SHOW[which]=!SHOW[which];
+  syncShowBtns();
+  if(window.Plotly) drawChart();
+}
+function syncShowBtns(){
+  const b=(id,on)=>{ const e=document.getElementById(id); if(!e) return;
+    e.classList.toggle("chip-on",on); e.setAttribute("aria-pressed",String(on)); };
+  b("btnShowPrice",SHOW.price); b("btnShowRisk",SHOW.risk);
+  const l=(id,on)=>{ const e=document.getElementById(id); if(e) e.classList.toggle("leg-off",!on); };
+  l("legPriceItem",SHOW.price||heatMap); l("legRiskItem",SHOW.risk&&!heatMap);
+  const bp=document.getElementById("btnShowPrice"), br=document.getElementById("btnShowRisk");
+  if(bp) bp.disabled=heatMap; if(br) br.disabled=heatMap;
+}
+(function(){
+  const p=document.getElementById("btnShowPrice"), r=document.getElementById("btnShowRisk");
+  if(p) p.addEventListener("click",()=>setShow("price"));
+  if(r) r.addEventListener("click",()=>setShow("risk"));
+})();
+
 function chartTraces(){
   if(heatMap) return heatTraces();
   /* Two decimals under v3, not three: the published row carries risk01 rounded
@@ -830,10 +857,10 @@ function chartTraces(){
   const rhov=(CHART_MODEL==="v3")
     ? t("chart_tip_v3")+" %{y:.2f} · conf %{customdata}/10<extra></extra>"
     : "Risk %{y:.3f} · conf %{customdata}/10<extra></extra>";
-  return [
-  {x:CUR.t,y:CUR.p,yaxis:"y",mode:"lines",line:{color:COL.blue,width:1.1},hovertemplate:"%{x|%d %b %Y}<br>$%{y:,.0f}<extra></extra>"},
-  {x:CUR.t,y:CUR.r,yaxis:"y2",mode:"lines",connectgaps:false,line:{color:COL.risk,width:1.0},customdata:CUR.c,hovertemplate:rhov}
-];}
+  const out=[];
+  if(SHOW.price) out.push({x:CUR.t,y:CUR.p,yaxis:"y",mode:"lines",line:{color:COL.blue,width:1.1},hovertemplate:"%{x|%d %b %Y}<br>$%{y:,.0f}<extra></extra>"});
+  if(SHOW.risk)  out.push({x:CUR.t,y:CUR.r,yaxis:"y2",mode:"lines",connectgaps:false,line:{color:COL.risk,width:1.0},customdata:CUR.c,hovertemplate:rhov});
+  return out;}
 /* Axis bounds follow whichever series is loaded: v2 starts 2011-01-13 at a few
    cents, the v3 tape starts 2012-03-07 at a few dollars. Keeping v2's bounds
    under a v3 chart leaves a band of empty space nothing can ever plot into. */
@@ -896,6 +923,10 @@ function chartLayout(){
      the frame's top pixel and reads as if it had gone past it. dtick keeps the
      labels at 0, 0.2 ... 1.0 so the padding is invisible. */
   const y2hi = CHART_MODEL==="v3" ? R_MAX*1.03 : R_MAX;
+  /* An axis with nothing on it is a label for data that is not there. The heat
+     map always draws the price line, so the USD axis stays for it. */
+  const showPx = SHOW.price || heatMap, showRk = SHOW.risk && !heatMap;
+  yax.visible = showPx; yax.showticklabels = showPx;
   return {paper_bgcolor:"rgba(0,0,0,0)",plot_bgcolor:"rgba(0,0,0,0)",font:{color:COL.font,size:11,family:"IBM Plex Mono"},
   margin:{l:60,r:54,t:10,b:34},showlegend:false,hovermode:"x unified",dragmode:"pan",
   hoverlabel:{bgcolor:"#0d121b",bordercolor:"#2a3444",font:{color:"#e9edf4",family:"IBM Plex Mono"}},
@@ -906,11 +937,12 @@ function chartLayout(){
           gridcolor:"rgba(0,0,0,0)",zeroline:false,color:COL.font,
           tickformat:CHART_MODEL==="v3"?".1f":undefined,
           dtick:CHART_MODEL==="v3"?0.2:undefined,
-          showticklabels:!heatMap,visible:!heatMap}};}
+          showticklabels:showRk,visible:showRk}};}
 function drawChart(){ return Plotly.react("chartPlot",chartTraces(),chartLayout(),{responsive:true,scrollZoom:true,displayModeBar:false,displaylogo:false,doubleClick:"reset"}); }
 function syncHeatBtn(){ const b=document.getElementById("btnHeat"); if(b){ b.textContent=t("chart_heat"); b.classList.toggle("chip-on",heatMap); }
   const sw=document.getElementById("stripWrap"); if(sw) sw.style.display=heatMap?"":"none";
   const lg=document.getElementById("chartLegend"); if(lg) lg.style.display=heatMap?"none":"";
+  syncShowBtns();     /* the show/hide chips are inert while the heat map is on */
 }
 function toggleHeat(){ heatMap=!heatMap; syncHeatBtn(); if(window.Plotly) drawChart(); }
 function syncScaleBtn(){ const b=document.getElementById("btnScale"); if(b) b.textContent=priceLog?t("chart_lin"):t("chart_log"); }
@@ -926,15 +958,32 @@ function toggleScale(){ priceLog=!priceLog; syncScaleBtn(); if(window.Plotly) dr
    Guarded the same way the gauge is: this runs only when V3.chart has loaded
    and V3 is active. Otherwise the chart stays on v2 and the header copy still
    says v2, which is the fallback working as designed -- never a silent mix. */
+/* THE ONLY place CUR is built from V3.chart.
+   It was built in two places -- here and again in refresh() -- and only one of
+   them divided risk100 by 100. refresh() runs immediately on load, so it
+   overwrote the converted series with raw 0-100 values: the extension line went
+   off the top of a [0,1] axis and vanished, and rUnit() clipped every day to 1
+   so the heat map painted the whole 15-year price line deep red. Two builders
+   for one thing is the same bug class as two input loaders. There is one now.
+
+   `extra` is the live price top-up: those days carry null for r and c because
+   the tape has not published a rank for them, and deriving one in the browser
+   is the recompute rule 1 forbids. */
+function v3Series(extra){
+  const ch=V3.chart;
+  const t=ch.t.slice(), p=ch.p.slice(),
+        r=ch.r.map(v=>v==null?null:v/100), c=ch.c.slice();
+  const lastPub=t[t.length-1];
+  for(const pt of (extra||[])){
+    if(pt.date<=lastPub) continue;
+    t.push(pt.date); p.push(pt.price); r.push(null); c.push(null);
+  }
+  return {t,p,r,c};
+}
 function useV3Chart(){
   if(!v3on() || typeof V3==="undefined" || !V3 || !V3.chart) return false;
-  const ch=V3.chart;
   CHART_MODEL="v3"; R_MAX=1;
-  /* risk100 -> 0-1 on load, so everything downstream sees one scale. Lossless:
-     risk100/100 == the tape's risk01 on every row, which is the number the
-     gauge prints, so the axis and the gauge can never disagree. */
-  CUR={t:ch.t.slice(),p:ch.p.slice(),
-       r:ch.r.map(v=>v==null?null:v/100),c:ch.c.slice()};
+  CUR=v3Series();
   syncChartBounds();
   syncChartCopy();
   if(window.Plotly) drawChart();
@@ -956,8 +1005,6 @@ function syncChartCopy(){
   const bar=document.getElementById("stripBar");
   if(bar){ bar.classList.toggle("v3",v3);
            bar.style.background=v3?heatGradientCSS():""; }
-  const note=document.getElementById("stripNote");
-  if(note){ note.textContent=v3?t("chart_heat_v3"):""; note.hidden=!v3; }
 }
 
 /* ---- live refresh (multi-source) ---- */
@@ -984,18 +1031,11 @@ async function refresh(){
     if(!fresh.length){ const s=await fetchSpot(); if(s){ const d=new Date().toISOString().slice(0,10); if(d>MODEL.lastDate) fresh=[{date:d,price:s}]; } }
     if(!fresh.length) return;
     if(CHART_MODEL==="v3"){
-      /* Extend the PRICE line to today and nothing else. There is no v3 rank
-         for a day the tape has not published, and deriving one in the browser
-         is exactly the recompute rule 1 forbids -- an expanding CDF means
-         today's provisional rank would not equal the row that gets committed
-         tomorrow. So r and c carry null for those days and the risk line simply
-         stops at the last published row, which is the truth. */
-      const tt=V3.chart.t.slice(),pp=V3.chart.p.slice(),rr=V3.chart.r.slice(),cc=V3.chart.c.slice();
-      const lastPub=tt[tt.length-1];
-      for(const pt of fresh){ if(pt.date<=lastPub) continue;
-        tt.push(pt.date); pp.push(pt.price); rr.push(null); cc.push(null); }
-      CUR={t:tt,p:pp,r:rr,c:cc};
-      LIVE_PX=pp[pp.length-1];
+      /* Extend the PRICE line to today and nothing else, through the single
+         builder -- see v3Series(). Rebuilding the arrays here is what broke the
+         scale conversion. */
+      CUR=v3Series(fresh);
+      LIVE_PX=CUR.p[CUR.p.length-1];
       if(window.Plotly) drawChart();
       updateAction();                       /* re-reads the committed row */
       renderOverlay(LIVE_PX);
@@ -1632,7 +1672,7 @@ function coverInit(){
   renderBuyingStrategies();
   const sel=document.getElementById("stratSel"); if(sel) sel.addEventListener("change",updateStratStance);
   const bs=document.getElementById("btnScale"); if(bs) bs.addEventListener("click",toggleScale);
-  const bh=document.getElementById("btnHeat"); if(bh) bh.addEventListener("click",toggleHeat); syncHeatBtn();
+  const bh=document.getElementById("btnHeat"); if(bh) bh.addEventListener("click",toggleHeat); syncHeatBtn(); syncShowBtns();
   startTicker();
   const _setLang=setLang;
   setLang=function(l){ _setLang(l); updateStratStance(); syncScaleBtn(); syncHeatBtn(); if(typeof syncBtScaleBtn==="function") syncBtScaleBtn(); buildRanges(); buildMatrix(); renderBuyingStrategies(); if(window.__notifRelang) window.__notifRelang(); };
