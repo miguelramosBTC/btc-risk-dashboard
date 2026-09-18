@@ -913,6 +913,61 @@ function chartRangeWindow(){
   const start=Math.max(new Date(X_MIN+"T00:00:00Z").getTime(), end-d*864e5);
   return [new Date(start).toISOString().slice(0,10), X_MAX];
 }
+/* ---- axes follow the visible window ----------------------------------------
+ * Both y axes were scaled to the WHOLE series and pinned there, so every short
+ * window was drawn against fifteen years of range. On 6M the price moved a few
+ * percent inside a log axis spanning $5 to $124,824 and came out a straight
+ * line; the extension line had the same problem against a full 0-1 axis. The
+ * data was right and the picture said nothing.
+ *
+ * The price axis simply auto-fits: a price has no fixed meaning, so the visible
+ * range IS the useful range, and that is what every price chart does.
+ *
+ * The extension axis is NOT the same kind of thing and gets a floor. It is a
+ * PERCENTILE: 0.80 is supposed to mean "more extended than 80% of history" no
+ * matter what else is on screen. Auto-fitting it without limit would let a
+ * quiet stretch between 0.28 and 0.40 fill the panel and read, at a glance, as
+ * though the market had swung from calm to extreme. So the window is widened to
+ * at least R_MIN_SPAN of the scale, which keeps the reading's POSITION legible
+ * while still showing its shape. Ticks always print the real values.
+ */
+const R_MIN_SPAN = 0.35;          /* of the 0-1 extension scale */
+function _finite(a){ return a.filter(v=>v!=null&&isFinite(v)); }
+function visibleBounds(){
+  const [w0,w1]=chartRangeWindow();
+  const lo=String(w0).slice(0,10), hi=String(w1).slice(0,10);
+  const px=[], rk=[];
+  for(let i=0;i<CUR.t.length;i++){
+    const d=CUR.t[i];
+    if(d<lo||d>hi) continue;
+    if(CUR.p[i]!=null&&isFinite(CUR.p[i])&&CUR.p[i]>0) px.push(CUR.p[i]);
+    if(CUR.r[i]!=null&&isFinite(CUR.r[i])) rk.push(CUR.r[i]);
+  }
+  const pl=px.length?Math.min.apply(null,px):P_MIN;
+  const ph=px.length?Math.max.apply(null,px):P_MAX;
+
+  let rl=rk.length?Math.min.apply(null,rk):0, rh=rk.length?Math.max.apply(null,rk):R_MAX;
+  if(CHART_MODEL==="v3"){
+    const span=rh-rl, want=R_MIN_SPAN*R_MAX;
+    if(span<want){                       /* widen about the midpoint, then clamp */
+      const mid=(rl+rh)/2;
+      rl=mid-want/2; rh=mid+want/2;
+      if(rl<0){ rh-=rl; rl=0; }
+      if(rh>R_MAX){ rl-=(rh-R_MAX); rh=R_MAX; }
+      rl=Math.max(0,rl);
+    }
+  }else{ rl=0; rh=R_MAX; }             /* v2 keeps its fixed 0-1 axis */
+  return {pl,ph,rl,rh};
+}
+/* The y ranges that belong to the current window, in the shape Plotly wants. */
+function yRangesForWindow(){
+  const b=visibleBounds();
+  const pad=CHART_MODEL==="v3"?0.03*(b.rh-b.rl):0;
+  const y=priceLog
+    ? [Math.log10(b.pl*0.92), Math.log10(b.ph*1.09)]
+    : [Math.max(0,b.pl-(b.ph-b.pl)*0.08), b.ph+(b.ph-b.pl)*0.08];
+  return {y, y2:[b.rl-pad, b.rh+pad]};
+}
 function syncRangeBtns(){
   document.querySelectorAll("#chartRange .rbtn").forEach(b=>b.classList.toggle("on",b.dataset.range===CHART_RANGE));
 }
@@ -921,8 +976,32 @@ function setChartRange(r){
   const gd=document.getElementById("chartPlot");
   if(window.Plotly&&gd&&gd._fullLayout){
     _rngProg=true;
-    Plotly.relayout(gd,{"xaxis.range":chartRangeWindow()}).then(()=>{_rngProg=false;}).catch(()=>{_rngProg=false;});
+    /* x and BOTH y ranges in one relayout: setting x alone is what left the
+       price pinned to fifteen years of range on a 6-month view. */
+    const yr=yRangesForWindow();
+    Plotly.relayout(gd,{"xaxis.range":chartRangeWindow(),
+                        "yaxis.range":yr.y,
+                        "yaxis2.range":yr.y2,
+                        "yaxis2.dtick":_rTick(yr.y2[1]-yr.y2[0])})
+      .then(()=>{_rngProg=false;}).catch(()=>{_rngProg=false;});
   }
+}
+/* After a pan or a scroll-zoom the visible window is new, so the y ranges are
+   stale. Recompute from what is on screen now. Debounced and guarded by
+   _rngProg, because this relayout would otherwise re-enter its own handler. */
+let _yFitT=null;
+function refitY(){
+  const gd=document.getElementById("chartPlot");
+  if(!window.Plotly||!gd||!gd._fullLayout||_rngProg) return;
+  clearTimeout(_yFitT);
+  _yFitT=setTimeout(()=>{
+    const yr=yRangesForWindow();
+    _rngProg=true;
+    Plotly.relayout(gd,{"yaxis.range":yr.y,
+                        "yaxis2.range":yr.y2,
+                        "yaxis2.dtick":_rTick(yr.y2[1]-yr.y2[0])})
+      .then(()=>{_rngProg=false;}).catch(()=>{_rngProg=false;});
+  },90);
 }
 (function(){
   const bar=document.getElementById("chartRange");
@@ -933,25 +1012,23 @@ function attachRangeReset(){
   if(!gd||typeof gd.on!=="function"||gd._rngHook) return; gd._rngHook=true;
   gd.on("plotly_relayout",ev=>{
     if(_rngProg||!ev) return;
-    if(ev["xaxis.range[0]"]!=null||ev["xaxis.range"]!=null||ev["xaxis.autorange"]!=null){ CHART_RANGE=null; syncRangeBtns(); }
+    if(ev["xaxis.range[0]"]!=null||ev["xaxis.range"]!=null||ev["xaxis.autorange"]!=null){
+      CHART_RANGE=null; syncRangeBtns(); refitY();
+    }
   });
 }
 function chartLayout(){
+  /* Both y ranges come from the VISIBLE window -- see visibleBounds(). The
+     padding that used to live here (3% at each end of the extension axis, so a
+     1.00 or a 0.05 does not draw on the frame) is now proportional to whatever
+     window is in view, and applied in yRangesForWindow(). */
+  const yr = yRangesForWindow();
   const yax = priceLog
     ? {title:{text:"USD",font:{color:COL.font}},type:"log",gridcolor:COL.grid,zeroline:false,color:COL.font,
-       range:[Math.log10(P_MIN*0.7),Math.log10(P_MAX*1.4)],minallowed:Math.log10(P_MIN*0.55),maxallowed:Math.log10(P_MAX*1.7),fixedrange:true}
+       range:yr.y,minallowed:Math.log10(P_MIN*0.55),maxallowed:Math.log10(P_MAX*1.7),fixedrange:true}
     : {title:{text:"USD",font:{color:COL.font}},type:"linear",gridcolor:COL.grid,zeroline:false,color:COL.font,tickformat:"$,.2s",
-       range:[0,P_MAX*1.06],minallowed:0,maxallowed:P_MAX*1.3,fixedrange:true};
-  /* Breathing room at BOTH ends under v3, not just the top.
-     60 days print exactly 1.00 (the 2017 and 2021 tops) and 6 print 0.05, and
-     on a hard [0,1] range those draw on the frame's own pixels -- which is what
-     made near-1 readings look like they had left the plot. The bottom needs it
-     for the same reason: the cycle lows are the most interesting readings on
-     the chart and they were sitting on the floor. tick0/dtick pin the labels to
-     0.0, 0.2 ... 1.0, so the padding is invisible and no tick is invented. */
-  const V3_PAD = 0.03;
-  const y2lo = CHART_MODEL==="v3" ? -V3_PAD*R_MAX : 0;
-  const y2hi = CHART_MODEL==="v3" ? R_MAX*(1+V3_PAD) : R_MAX;
+       range:yr.y,minallowed:0,maxallowed:P_MAX*1.3,fixedrange:true};
+  const y2lo = yr.y2[0], y2hi = yr.y2[1];
   /* An axis with nothing on it is a label for data that is not there. The heat
      map always draws the price line, so the USD axis stays for it. */
   const showPx = SHOW.price || heatMap, showRk = SHOW.risk && !heatMap;
@@ -964,10 +1041,16 @@ function chartLayout(){
   yaxis2:{title:{text:heatMap?"":t(CHART_MODEL==="v3"?"chart_y2_v3":"chart_y2_v2"),font:{color:COL.font}},
           overlaying:"y",side:"right",range:[y2lo,y2hi],minallowed:y2lo,maxallowed:y2hi,fixedrange:true,
           gridcolor:"rgba(0,0,0,0)",zeroline:false,color:COL.font,
-          tickformat:CHART_MODEL==="v3"?".1f":undefined,
+          tickformat:CHART_MODEL==="v3"?".2f":undefined,
           tick0:CHART_MODEL==="v3"?0:undefined,
-          dtick:CHART_MODEL==="v3"?0.2:undefined,
+          /* 0.2 steps suit the full scale; a narrow window needs finer ones or
+             it shows two labels. Chosen from the span actually on screen. */
+          dtick:CHART_MODEL==="v3"?_rTick(y2hi-y2lo):undefined,
           showticklabels:showRk,visible:showRk}};}
+function _rTick(span){
+  for(const d of [0.01,0.02,0.05,0.1,0.2,0.25]) if(span/d<=8) return d;
+  return 0.2;
+}
 function drawChart(){ return Plotly.react("chartPlot",chartTraces(),chartLayout(),{responsive:true,scrollZoom:true,displayModeBar:false,displaylogo:false,doubleClick:"reset"}); }
 function syncHeatBtn(){ const b=document.getElementById("btnHeat"); if(b){ b.textContent=t("chart_heat"); b.classList.toggle("chip-on",heatMap); }
   const sw=document.getElementById("stripWrap"); if(sw) sw.style.display=heatMap?"":"none";

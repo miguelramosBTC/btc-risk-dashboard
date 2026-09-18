@@ -245,6 +245,22 @@ No v3 compute exists yet. v2 remains the public gauge.
 
 46. **The price line is white by default.** It was `#5b8def` — the same blue family the heat map uses for its cold end — so a blue price line and a blue "cheap" reading competed for one meaning, and under the heat map the eye had to separate two blues that meant different things. White belongs to neither end of the risk ramp, which is exactly why it suits the series that is not a risk reading. The legend swatch moved with it; `COL.blue` stays because other widgets use it.
 
+47. **Both y axes now follow the visible window.** They were scaled to the whole series and pinned with `fixedrange`, so every short view was drawn against fifteen years of range. Measured, as decades of log price actually used by the axis:
+
+    | window | price in window | axis before | axis now | decades of axis the data uses |
+    |---|---|---|---|---|
+    | All | $5 – $124,824 | $4 – $136,059 | $4 – $136,059 | 4.51 |
+    | 5Y | $15,758 – $124,824 | $4 – $136,059 | $14,498 – $136,059 | 0.97 |
+    | 1Y | $58,525 – $114,557 | $4 – $136,059 | $53,843 – $124,867 | 0.37 |
+    | 6M | $58,525 – $82,257 | $4 – $136,059 | $53,843 – $89,660 | 0.22 |
+    | 3M | $62,752 – $81,243 | $4 – $136,059 | $57,732 – $88,555 | 0.19 |
+
+    On 6M the price occupied 0.22 of a 4.51-decade axis — under 5% of the panel height — which is why it drew as a straight line. The data was right and the picture said nothing.
+
+    **The two axes are not treated the same, deliberately.** A price has no fixed meaning, so the visible range *is* the useful range and it auto-fits without limit. The extension axis is a **percentile**: `0.80` is supposed to mean "more extended than 80% of history" regardless of what else is on screen, and auto-fitting it without limit would let a quiet stretch between 0.28 and 0.40 fill the panel and read, at a glance, as a swing from calm to extreme. So it is widened to at least **`R_MIN_SPAN` = 0.35 of the scale**, about its own midpoint, then clamped inside [0, 1]; ticks always print real values and the step is chosen from the span on screen. Verified at all four positions: a 0.30–0.34 window opens to [0.145, 0.495]; 0.05–0.09 clamps to [0, 0.35]; 0.94–0.99 clamps to [0.65, 1.00]; a genuinely wide 0.10–0.90 window is left alone.
+
+    This is a presentation choice with a real cost, so it is stated rather than buried: on a short window the extension line's *shape* is now readable and its *height* is no longer directly comparable to another window's. The axis labels are the guard. If that trade is ever judged wrong, one constant reverts it — `R_MIN_SPAN = 1` pins the axis back to the full scale.
+
 ### Ship gates (spec §12.1) — `model/v3/validate.py` exits non-zero on any failure
 
 Full causal tape: **reach** (2013-12-04, 2017-12-17, 2021-04-14, 2021-11-10, 2024-03-13, 2025-10-06 in the top quintile of the tape up to that day) · **order** (2025-10-06 not below 2024-03-13 without a written G/Σ residual explanation) · **bottom** (2015-01-14, 2018-12-15, 2022-11-21 in the bottom quintile) · **low-vol rich** (synthetic: high V + falling κ does not lower Σ) · **collinearity** (max |r| among mapped pillars ≤ 0.80) · **nested baseline** (walk-forward Spearman of −risk vs next-90-day return, 2014 → embargo, beats Mayer percentile alone, MVRV percentile alone, 200-week-SMA distance; if MVRV alone wins, strip ornament pillars, never raise w_V above 0.40) · **rewrite probe** (compute twice, committed rows byte-stable; a v3.1 weight change does not touch `v3.0.jsonl`). Second table, holdout year only, no parameter chosen from it.
