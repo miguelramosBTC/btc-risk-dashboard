@@ -702,13 +702,26 @@ const V3_STOPS=[[0,[63,185,80]],[0.20,[70,179,201]],[0.60,[236,122,28]],[0.80,[2
  *     2026-06-30  $58,525   0.100   marine/azure
  *     2018-12-15  $3,185    0.170   blue-teal
  *
- * Everything between is stretched so the middle of the range actually travels:
- * teal 0.30, green 0.50, yellow 0.68, orange 0.84. Monotonic cool-to-hot, so
- * warmth still reads as extension at a glance.
+ * Everything between is stretched so the middle of the range actually travels,
+ * and it carries NO GREEN: teal 0.30, pale blue-grey 0.46, cream 0.60, yellow
+ * 0.72, orange 0.86. Monotonic cool-to-hot, so warmth still reads as extension.
+ *
+ * Getting there is not just "delete the green stop". Interpolating teal
+ * (70,179,201) straight to yellow (232,200,74) passes THROUGH green, because
+ * G stays high while B falls and R has not yet overtaken. The path therefore
+ * keeps B >= G until R takes over, pivoting through a near-neutral at 0.53
+ * (192,204,182, saturation 0.11 -- a warm grey, not a colour). Checked by hue
+ * angle rather than by eye: sampling the ramp at 1,001 points, the share
+ * landing in the green band (hue 80-170 deg with saturation above 0.25) went
+ * from 234 samples to ZERO, and from 17.0% of the tape's days to 0.0%.
+ * Yellow-plus-orange rose from 41.4% of days to 46.3%.
+ *
+ * The two ends are untouched, so their shares of the tape are exactly as
+ * before: deep marine <= 0.12 is 6.09% of days, intense red >= 0.95 is 7.22%.
  */
 const V3_HEAT_STOPS=[[0,[10,45,140]],[0.12,[30,111,235]],[0.30,[70,179,201]],
-                     [0.50,[63,185,80]],[0.68,[232,200,74]],[0.84,[236,122,28]],
-                     [0.95,[214,61,46]],[1,[140,20,26]]];
+                     [0.46,[150,193,212]],[0.60,[233,214,152]],[0.72,[232,200,74]],
+                     [0.86,[236,122,28]],[0.95,[214,61,46]],[1,[140,20,26]]];
 /* `model` is explicit because the two scales coexist on one page: the gauge and
    the matrix follow the SERVING model, while the main chart follows whichever
    series it managed to load. Those can differ -- v3 gauge, v2 chart, if the
