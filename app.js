@@ -76,8 +76,9 @@ const I18N = {
   /* v3 chart: la escala cambió. 0-100 es un percentil de su propia historia,
      no el score 0-1 de v2 y nunca una probabilidad. */
   chart_h_v3:"Precio y extensión desde 2012",
-  chart_d_v3:"Precio de Bitcoin (escala logarítmica) y la lectura publicada de 0 a 100: el percentil de lo extendido que estaba el mercado frente a su propia historia hasta esa mañana. La línea de extensión termina en la última fila publicada; el precio sigue en vivo.",
-  leg_risk_v3:"Extensión (0-100)",
+  chart_d_v3:"Precio de Bitcoin (escala logarítmica) y la lectura publicada de 0 a 1: el percentil de lo extendido que estaba el mercado frente a su propia historia hasta esa mañana \u2014 el mismo número que marca la aguja. La línea de extensión termina en la última fila publicada; el precio sigue en vivo.",
+  leg_risk_v3:"Extensión (0-1)",
+  chart_heat_v3:"Mapa de calor: el rojo intenso queda reservado para los extremos de ciclo (0,95 y por encima, un 7 % de los días).",
   chart_y2_v3:"Extensión", chart_y2_v2:"Riesgo", chart_tip_v3:"Extensión",
   rng_all:"Todo", rng_10y:"10A", rng_5y:"5A", rng_3y:"3A", rng_1y:"1A", rng_6m:"6M", rng_3m:"3M",
   trust_open:"Modelo abierto y transparente", trust_data:"Solo datos públicos (Coin Metrics)", trust_advice:"Nunca es asesoramiento financiero",
@@ -322,8 +323,9 @@ const I18N = {
   /* v3 chart: the scale changed. 0-100 is a percentile of its own history, not
      v2's 0-1 score, and never a probability. */
   chart_h_v3:"Price and extension since 2012",
-  chart_d_v3:"Bitcoin price (log scale) and the published 0-100 reading: the percentile of how extended the market was versus its own history up to that morning. The extension line ends at the last published row; the price stays live.",
-  leg_risk_v3:"Extension (0-100)",
+  chart_d_v3:"Bitcoin price (log scale) and the published 0-1 reading: the percentile of how extended the market was versus its own history up to that morning \u2014 the same number the needle shows. The extension line ends at the last published row; the price stays live.",
+  leg_risk_v3:"Extension (0-1)",
+  chart_heat_v3:"Heat map: intense red is reserved for the cycle extremes (0.95 and above, about 7% of days).",
   chart_y2_v3:"Extension", chart_y2_v2:"Risk", chart_tip_v3:"Extension",
   rng_all:"All", rng_10y:"10Y", rng_5y:"5Y", rng_3y:"3Y", rng_1y:"1Y", rng_6m:"6M", rng_3m:"3M",
   trust_open:"Open & transparent model", trust_data:"Public data only (Coin Metrics)", trust_advice:"Never financial advice",
@@ -658,19 +660,61 @@ let MTX_ROWS=[];
  */
 const V2_STOPS=[[0,[30,111,235]],[0.22,[70,179,201]],[0.48,[232,200,74]],[0.70,[236,122,28]],[0.88,[214,61,46]],[1,[200,46,52]]];
 const V3_STOPS=[[0,[63,185,80]],[0.20,[70,179,201]],[0.60,[236,122,28]],[0.80,[214,61,46]],[1,[200,46,52]]];
+
+/* ---- the heat-map ramp -----------------------------------------------------
+ * The heat map answers a different question from the gauge. The gauge asks
+ * "where are we today" against the four published quintile bands, so V3_STOPS
+ * sits on those. The heat map colours a 15-year price line, so what it needs to
+ * do is make the handful of genuine cycle extremes findable at a glance -- and
+ * v2's stops reddened 15.4% of all history, which is a colour nothing rare can
+ * stand out from.
+ *
+ * Intense red is therefore reserved for the top of the range. Measured against
+ * every running-ATH peak in the tape:
+ *
+ *     2012-12-13  $14        0.76      2021-11-08  $67,542    0.91
+ *     2013-12-04  $1,135     0.94      2024-12-17  $106,116   0.90
+ *     2017-12-16  $19,641    1.00      2025-10-06  $124,824   0.80
+ *     2020-12-31  $29,023    0.98
+ *
+ * Occupancy of the upper tail: >=0.86 is 19% of days, >=0.95 is 7.2%, and
+ * >=1.00 is 1.1% (60 days, all in 2013/2017/2021). So red opens at 0.95 and
+ * deepens to 1.00, which is about a fortnight of colour per cycle.
+ *
+ * The visible consequence, stated rather than hidden: 2025-10-06 prints 0.80
+ * and 2024-12-17 prints 0.90, so the two most recent dollar all-time highs
+ * come out amber and orange, NOT red. That is the documented order inversion
+ * (higher high in dollars, lower high on extension and cost basis) showing up
+ * in the picture. Reddening them would mean painting over the model's actual
+ * finding to make the chart look like the price chart.
+ */
+const V3_HEAT_STOPS=[[0,[30,111,235]],[0.45,[70,179,201]],[0.70,[232,200,74]],
+                     [0.86,[236,122,28]],[0.95,[214,61,46]],[1,[140,20,26]]];
 /* `model` is explicit because the two scales coexist on one page: the gauge and
    the matrix follow the SERVING model, while the main chart follows whichever
    series it managed to load. Those can differ -- v3 gauge, v2 chart, if the
    chart file is missing -- and colouring v2 values with v3 bands would be the
    one combination that misleads. */
 function riskStops(model){ return (model||(v3on()?"v3":"v2"))==="v3"?V3_STOPS:V2_STOPS; }
-function riskColor(r,model){ r=clip(r,0,1);
-  const RISK_STOPS=riskStops(model);
+/* The heat map has its own ramp under v3; v2 keeps the one it shipped with. */
+function heatStops(){ return CHART_MODEL==="v3"?V3_HEAT_STOPS:V2_STOPS; }
+function rampColor(r,stops){ r=clip(r,0,1);
+  const RISK_STOPS=stops;
   for(let i=1;i<RISK_STOPS.length;i++){ if(r<=RISK_STOPS[i][0]){
     const a0=RISK_STOPS[i-1][0],c0=RISK_STOPS[i-1][1],a1=RISK_STOPS[i][0],c1=RISK_STOPS[i][1];
     const f=(r-a0)/((a1-a0)||1), c=c0.map((v,k)=>Math.round(v+(c1[k]-v)*f));
     return "rgb("+c[0]+","+c[1]+","+c[2]+")"; } }
   const last=RISK_STOPS[RISK_STOPS.length-1][1]; return "rgb("+last[0]+","+last[1]+","+last[2]+")"; }
+/* Gauge, matrix and ranges table: the published quintile bands. */
+function riskColor(r,model){ return rampColor(r,riskStops(model)); }
+/* Heat map only: red reserved for the cycle extremes. See V3_HEAT_STOPS. */
+function heatColor(r){ return rampColor(r,heatStops()); }
+/* The CSS heat strip is the heat map's legend, so it is built from the same
+   stops rather than hard-coded in style.css where it would drift out of sync. */
+function heatGradientCSS(){
+  return "linear-gradient(90deg,"+heatStops()
+    .map(s=>rampColor(s[0],heatStops())+" "+(s[0]*100).toFixed(0)+"%").join(",")+")";
+}
 
 function confColor(c){ /* 0..10 -> red(low) → amber → green(high) */
   const f=clip(c/10,0,1);
@@ -744,13 +788,20 @@ function renderOverlay(spot){
 /* ---- main chart ---- */
 const COL={grid:"#1a2230",font:"#8b95a7",blue:"#5b8def",risk:"#ef5366"};
 
-/* Which model the chart is plotting, and on which scale.
-   v2's DATA.r is a 0-1 blend. v3's r is risk100: an INTEGER 0-100 percentile.
-   They are different quantities on different scales and must never share an
-   axis, so R_MAX travels with the data and every consumer -- y2 range and
-   ticks, the colour ramp, the tooltip, the heat legend, the CSV export --
-   reads it instead of assuming 1. Starts on v2 and is swapped in only once
-   V3.chart has actually loaded, which is the same fallback the gauge uses. */
+/* Which model the chart is plotting.
+   Both v3 and v2 are displayed on 0-1, so the axis itself is the same shape --
+   but they are NOT the same quantity. v2's DATA.r is a blend of mapped signals;
+   v3's is a causal percentile rank. Same axis, different meaning, which is why
+   the heading, legend, tooltip and CSV header all change with CHART_MODEL
+   instead of leaving one label to cover both.
+
+   The published file carries `risk100`, the canonical integer the tape, the API
+   and the bot all use. The chart divides it by 100 on load, which is lossless:
+   risk100/100 equals the tape's own `risk01` on all 5,307 rows exactly, so the
+   chart axis and the gauge print the identical number.
+
+   R_MAX stays because rUnit and the colour ramps read it, and because a future
+   series could arrive on another scale; today both are 1. */
 let CHART_MODEL="v2", R_MAX=1;
 let CUR={t:DATA.t.slice(),p:DATA.p.slice(),r:DATA.r.slice(),c:DATA.c.slice()};
 const rUnit=r=>clip((Number(r)||0)/R_MAX,0,1);   /* native scale -> 0..1 for colour */
@@ -769,15 +820,15 @@ function heatTraces(){
     }
   }
   return buckets.map((bk,k)=>({x:bk.x,y:bk.y,yaxis:"y",mode:"lines",connectgaps:false,
-    line:{color:riskColor((k+0.5)/N,CHART_MODEL),width:3.2},hoverinfo:"skip"}));
+    line:{color:heatColor((k+0.5)/N),width:3.2},hoverinfo:"skip"}));
 }
 function chartTraces(){
   if(heatMap) return heatTraces();
-  /* v3 prints an integer percentile, v2 a 0-1 blend: the tooltip must not read
-     "Risk 0.803" for a number the rest of the site prints as 80, nor imply
-     three decimals of precision the published row does not carry. */
+  /* Two decimals under v3, not three: the published row carries risk01 rounded
+     to 2dp and the gauge prints it that way, so a third decimal would invent
+     precision the tape does not have. v2 keeps its own 3dp blend. */
   const rhov=(CHART_MODEL==="v3")
-    ? t("chart_tip_v3")+" %{y:.0f}/100 · conf %{customdata}/10<extra></extra>"
+    ? t("chart_tip_v3")+" %{y:.2f} · conf %{customdata}/10<extra></extra>"
     : "Risk %{y:.3f} · conf %{customdata}/10<extra></extra>";
   return [
   {x:CUR.t,y:CUR.p,yaxis:"y",mode:"lines",line:{color:COL.blue,width:1.1},hovertemplate:"%{x|%d %b %Y}<br>$%{y:,.0f}<extra></extra>"},
@@ -840,15 +891,21 @@ function chartLayout(){
        range:[Math.log10(P_MIN*0.7),Math.log10(P_MAX*1.4)],minallowed:Math.log10(P_MIN*0.55),maxallowed:Math.log10(P_MAX*1.7),fixedrange:true}
     : {title:{text:"USD",font:{color:COL.font}},type:"linear",gridcolor:COL.grid,zeroline:false,color:COL.font,tickformat:"$,.2s",
        range:[0,P_MAX*1.06],minallowed:0,maxallowed:P_MAX*1.3,fixedrange:true};
+  /* A hair of headroom above 1 under v3. 60 days print exactly 1.00 (the 2017
+     and 2021 tops), and on a hard [0,1] range a line at the maximum draws on
+     the frame's top pixel and reads as if it had gone past it. dtick keeps the
+     labels at 0, 0.2 ... 1.0 so the padding is invisible. */
+  const y2hi = CHART_MODEL==="v3" ? R_MAX*1.03 : R_MAX;
   return {paper_bgcolor:"rgba(0,0,0,0)",plot_bgcolor:"rgba(0,0,0,0)",font:{color:COL.font,size:11,family:"IBM Plex Mono"},
   margin:{l:60,r:54,t:10,b:34},showlegend:false,hovermode:"x unified",dragmode:"pan",
   hoverlabel:{bgcolor:"#0d121b",bordercolor:"#2a3444",font:{color:"#e9edf4",family:"IBM Plex Mono"}},
   xaxis:{gridcolor:COL.grid,zeroline:false,color:COL.font,type:"date",rangeslider:{visible:false},range:chartRangeWindow(),minallowed:X_MIN,maxallowed:X_MAX},
   yaxis:yax,
   yaxis2:{title:{text:heatMap?"":t(CHART_MODEL==="v3"?"chart_y2_v3":"chart_y2_v2"),font:{color:COL.font}},
-          overlaying:"y",side:"right",range:[0,R_MAX],minallowed:0,maxallowed:R_MAX,fixedrange:true,
+          overlaying:"y",side:"right",range:[0,y2hi],minallowed:0,maxallowed:y2hi,fixedrange:true,
           gridcolor:"rgba(0,0,0,0)",zeroline:false,color:COL.font,
-          tickformat:CHART_MODEL==="v3"?"d":undefined,
+          tickformat:CHART_MODEL==="v3"?".1f":undefined,
+          dtick:CHART_MODEL==="v3"?0.2:undefined,
           showticklabels:!heatMap,visible:!heatMap}};}
 function drawChart(){ return Plotly.react("chartPlot",chartTraces(),chartLayout(),{responsive:true,scrollZoom:true,displayModeBar:false,displaylogo:false,doubleClick:"reset"}); }
 function syncHeatBtn(){ const b=document.getElementById("btnHeat"); if(b){ b.textContent=t("chart_heat"); b.classList.toggle("chip-on",heatMap); }
@@ -872,8 +929,12 @@ function toggleScale(){ priceLog=!priceLog; syncScaleBtn(); if(window.Plotly) dr
 function useV3Chart(){
   if(!v3on() || typeof V3==="undefined" || !V3 || !V3.chart) return false;
   const ch=V3.chart;
-  CHART_MODEL="v3"; R_MAX=100;
-  CUR={t:ch.t.slice(),p:ch.p.slice(),r:ch.r.slice(),c:ch.c.slice()};
+  CHART_MODEL="v3"; R_MAX=1;
+  /* risk100 -> 0-1 on load, so everything downstream sees one scale. Lossless:
+     risk100/100 == the tape's risk01 on every row, which is the number the
+     gauge prints, so the axis and the gauge can never disagree. */
+  CUR={t:ch.t.slice(),p:ch.p.slice(),
+       r:ch.r.map(v=>v==null?null:v/100),c:ch.c.slice()};
   syncChartBounds();
   syncChartCopy();
   if(window.Plotly) drawChart();
@@ -887,11 +948,16 @@ function syncChartCopy(){
   set("chartHead", v3?"chart_h_v3":"chart_h");
   set("chartDesc", v3?"chart_d_v3":"chart_d");
   set("legRisk",   v3?"leg_risk_v3":"leg_risk");
+  /* Evenly spaced labels on a linear 0-1 axis, so the tick positions are
+     honest even though the colour ramp's knots are not evenly spaced. */
   const lbl=document.getElementById("stripLbl");
-  if(lbl) lbl.innerHTML=(v3?["0","20","60","80","100"]:["0","0.3","0.6","1.0"])
+  if(lbl) lbl.innerHTML=(v3?["0","0.25","0.50","0.75","1.00"]:["0","0.3","0.6","1.0"])
     .map(s=>"<span>"+s+"</span>").join("");
   const bar=document.getElementById("stripBar");
-  if(bar) bar.classList.toggle("v3",v3);
+  if(bar){ bar.classList.toggle("v3",v3);
+           bar.style.background=v3?heatGradientCSS():""; }
+  const note=document.getElementById("stripNote");
+  if(note){ note.textContent=v3?t("chart_heat_v3"):""; note.hidden=!v3; }
 }
 
 /* ---- live refresh (multi-source) ---- */
@@ -992,7 +1058,7 @@ function exportChartCSV(){
   const w=chartWindow();
   const cell=v=>(v==null?"":v);
   let rows=(CHART_MODEL==="v3")
-    ? "date,price_usd,risk100_percentile,confidence\n"
+    ? "date,price_usd,risk01_percentile_rank,confidence\n"
     : "date,price_usd,risk_v2_blend,confidence\n";
   for(let i=0;i<CUR.t.length;i++){
     const d=CUR.t[i]; if(w&&(d<w[0]||d>w[1])) continue;

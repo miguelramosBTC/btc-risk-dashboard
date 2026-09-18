@@ -184,6 +184,30 @@ No v3 compute exists yet. v2 remains the public gauge.
 
     The risk line stops at the last committed row and the price line continues live: there is no v3 rank for a day the tape has not published, and deriving one in the browser is the recompute rule 1 forbids. The swap is gated on `V3.active` **and** the chart series loading; either missing leaves the chart on v2 with v2's own copy and legend, never a mix of the two scales.
 
+40. **The chart is on 0–1, and it should have been from the start.** Decision 5 already says *"the dashboard keeps the 0–1 scale for continuity"*, and `docs/SCHEMA_v3.0.md` records it against `risk01`. Shipping the chart's axis on 0–100 in decision 39 was the deviation, not the correction of one. The published file still carries `risk100` — the canonical integer the tape, `/api/risk` and the bot all read — and `app.js` divides by 100 on load. **The conversion is lossless: `risk100/100` equals the tape's own `risk01` on all 5,307 rows, max difference 0.0e+00**, so the chart axis and the gauge needle now print the identical number. Do not "simplify" by publishing 0–1 in the file; three other consumers read the integer.
+
+41. **Why some readings print the maximum, and why that is not "above 100".** Asked whether the 2017 and 2021 tops exceeded 100. They do not: the published series runs **5 to 100 inclusive, with zero values above it**. What those tops do is *saturate*. Every empirical CDF is clipped to **[0.001, 0.999]** so no day is ever ranked as literally 0 % or 100 % of history, and `risk01` is then rounded to 2 dp — so any day whose causal rank reaches **0.995** prints `1.00` / `100`. Sixty days do: 55 in 2017, 3 in 2021, 2 in 2013. Twenty-four of those sit at the hard clip itself. `1.00` therefore means *"more extended than at least 99.5 % of its own causal history to that morning"* — never "the top", and never a probability.
+
+    The *appearance* of exceeding the maximum was a plotting artefact: on a hard `[0, 1]` range a line at exactly 1.00 draws on the frame's top pixel and reads as though it had spilled past it. The y2 axis now carries **3 % headroom** with `dtick 0.2`, so a saturated day sits visibly inside the frame and the tick labels still read 0.0 … 1.0.
+
+42. **The heat map gets its own ramp; intense red is now the cycle extremes only.** v2's stops reddened **15.4 %** of all history — a colour nothing rare can stand out from. The heat map's job is different from the gauge's: it colours a fifteen-year price line, so what it must do is make the handful of genuine extremes findable. Red therefore opens at **0.95** (7.2 % of days) and deepens to 1.00 (1.1 %, 60 days), which is roughly a fortnight of colour per cycle. This also lines up with decision 18's own guidance that *"a moderate book sells at 90–95, not 80"*.
+
+    Measured against every running-ATH peak in the tape:
+
+    | peak | price | extension |
+    |---|---|---|
+    | 2012-12-13 | $14 | 0.76 |
+    | 2013-12-04 | $1,135 | 0.94 |
+    | 2017-12-16 | $19,641 | **1.00** |
+    | 2020-12-31 | $29,023 | 0.98 |
+    | 2021-11-08 | $67,542 | 0.91 |
+    | 2024-12-17 | $106,116 | 0.90 |
+    | 2025-10-06 | $124,824 | **0.80** |
+
+    **The visible consequence, stated rather than hidden:** the two most recent dollar all-time highs come out orange (2024-12-17) and amber (2025-10-06), **not red**. That is the documented order inversion — higher high in dollars, lower high on extension and cost basis — showing up in the picture. Reddening them would mean painting over the model's actual finding to make the chart look like the price chart, which is the same error as retuning a gate to pass.
+
+    There are now **two ramps on one page**, deliberately. The gauge, the risk-price matrix and the ranges table stay on the four published quintile bands so their colour agrees with the email and the bot; the heat map uses the peak-emphasising ramp and the heat strip is built from those same stops in `app.js` rather than hard-coded in CSS, so the legend cannot drift out of sync with the colours it describes.
+
 ### Ship gates (spec §12.1) — `model/v3/validate.py` exits non-zero on any failure
 
 Full causal tape: **reach** (2013-12-04, 2017-12-17, 2021-04-14, 2021-11-10, 2024-03-13, 2025-10-06 in the top quintile of the tape up to that day) · **order** (2025-10-06 not below 2024-03-13 without a written G/Σ residual explanation) · **bottom** (2015-01-14, 2018-12-15, 2022-11-21 in the bottom quintile) · **low-vol rich** (synthetic: high V + falling κ does not lower Σ) · **collinearity** (max |r| among mapped pillars ≤ 0.80) · **nested baseline** (walk-forward Spearman of −risk vs next-90-day return, 2014 → embargo, beats Mayer percentile alone, MVRV percentile alone, 200-week-SMA distance; if MVRV alone wins, strip ornament pillars, never raise w_V above 0.40) · **rewrite probe** (compute twice, committed rows byte-stable; a v3.1 weight change does not touch `v3.0.jsonl`). Second table, holdout year only, no parameter chosen from it.

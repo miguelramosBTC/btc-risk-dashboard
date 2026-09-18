@@ -30,14 +30,37 @@ series**, and they are **different objects on different scales**.
 > a twice-a-cycle event. Plotting them on one chart, diffing them, or carrying a
 > threshold from one to the other produces a number that means nothing.
 
-They do not even share the 0–1 axis any more: `series/v3.0_chart.json` publishes
-`risk100`, an **integer 0–100 percentile**, while `data.js` publishes a 0–1
-blend. `R_MAX` in `app.js` travels with whichever series is loaded so the axis,
-the colour ramp, the tooltip and the CSV export can never assume the other
-one's scale. The chart's colour stops are placed on the four published quintile
-bands (0–20 / 20–60 / 60–80 / 80–100) so the legend agrees with the gauge, the
-email and the bot; v2's stops were positioned against v2's distribution and
-mean nothing on a ranked scale.
+They share the 0–1 **axis** and nothing else. `series/v3.0_chart.json` publishes
+`risk100`, the canonical integer the tape, the API and the bot use; the chart
+divides it by 100 on load, which is lossless — `risk100/100` equals the tape's
+own `risk01` on all 5,307 rows exactly, so the chart and the gauge print the
+identical number. `data.js` publishes a 0–1 blend of mapped signals, which is a
+different quantity at the same coordinates. That is why the heading, legend,
+tooltip and CSV header all change with the model rather than one label covering
+both.
+
+Two colour ramps, because they answer different questions:
+
+- **Gauge, matrix and ranges table** use the four published quintile bands
+  (0–0.20 / 0.20–0.60 / 0.60–0.80 / 0.80–1.00), so the colour agrees with the
+  gauge, the email and the bot.
+- **The heat map** reserves intense red for the cycle extremes: red opens at
+  **0.95** (7.2% of days) and deepens to 1.00 (1.1%, 60 days, all in
+  2013/2017/2021). v2's stops reddened 15.4% of history, which nothing rare can
+  stand out from.
+
+A consequence worth stating: the two most recent dollar all-time highs print
+**0.90** (2024-12-17) and **0.80** (2025-10-06), so they come out orange and
+amber on the heat map, not red. That is the documented order inversion — higher
+high in dollars, lower high on extension and cost basis — showing up in the
+picture. Reddening them would mean painting over the finding to make the chart
+look like the price chart.
+
+**A reading of 1.00 is not certainty.** Every empirical CDF is clipped to
+[0.001, 0.999], and `risk01` is rounded to 2 dp, so any day whose causal rank
+reaches 0.995 prints 1.00. Sixty days do, 24 of them at the hard clip. It means
+"more extended than at least 99.5% of its own history to that morning", never
+"the top" and never a probability.
 
 Every consumer states which model served it:
 
