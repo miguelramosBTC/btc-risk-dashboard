@@ -44,10 +44,16 @@ Two colour ramps, because they answer different questions:
 - **Gauge, matrix and ranges table** use the four published quintile bands
   (0–0.20 / 0.20–0.60 / 0.60–0.80 / 0.80–1.00), so the colour agrees with the
   gauge, the email and the bot.
-- **The heat map** reserves intense red for the cycle extremes: red opens at
-  **0.95** (7.2% of days) and deepens to 1.00 (1.1%, 60 days, all in
-  2013/2017/2021). v2's stops reddened 15.4% of history, which nothing rare can
-  stand out from.
+- **The heat map** reserves its two intense colours for the cycle extremes, at
+  both ends and near-symmetrically: **deep marine below 0.12** (6.1% of days)
+  and **intense red above 0.95** (7.2%), deepening to navy at 0.00 and to a
+  dark red at 1.00. Everything between is stretched so the middle of the range
+  actually travels — azure 0.12, teal 0.30, green 0.50, yellow 0.68, orange
+  0.84 — monotonic cool-to-hot, so warmth still reads as extension at a glance.
+  Two earlier versions were wrong in the same way at opposite ends: v2's stops
+  reddened 15.4% of history, and the first v3 cold end left **0.00–0.40 — 29.0%
+  of all history, 1,540 days — as one flat marine blue**, so 0.05 and 0.38
+  looked identical while meaning opposite things.
 
 A consequence worth stating: the two most recent dollar all-time highs print
 **0.90** (2024-12-17) and **0.80** (2025-10-06), so they come out orange and

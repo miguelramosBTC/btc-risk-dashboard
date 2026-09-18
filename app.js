@@ -687,9 +687,28 @@ const V3_STOPS=[[0,[63,185,80]],[0.20,[70,179,201]],[0.60,[236,122,28]],[0.80,[2
  * (higher high in dollars, lower high on extension and cost basis) showing up
  * in the picture. Reddening them would mean painting over the model's actual
  * finding to make the chart look like the price chart.
+ *
+ * THE COLD END IS TREATED THE SAME WAY, and it was not at first. The first
+ * version opened at azure and reached teal only at 0.45, so 0.00-0.40 -- which
+ * is 29.0% of all history, 1,540 days -- rendered as one flat marine blue.
+ * 0.05 and 0.38 are radically different readings and looked identical.
+ *
+ * Deep marine is now the mirror of deep red: it holds [0, 0.12], which is
+ * 6.1% of days against red's 7.2%. Measured against the lows the bottom gate
+ * names, so the extremes keep the strongest colour:
+ *
+ *     2022-11-21  $15,778   0.050   deep marine
+ *     2015-01-14  $176      0.080   marine
+ *     2026-06-30  $58,525   0.100   marine/azure
+ *     2018-12-15  $3,185    0.170   blue-teal
+ *
+ * Everything between is stretched so the middle of the range actually travels:
+ * teal 0.30, green 0.50, yellow 0.68, orange 0.84. Monotonic cool-to-hot, so
+ * warmth still reads as extension at a glance.
  */
-const V3_HEAT_STOPS=[[0,[30,111,235]],[0.45,[70,179,201]],[0.70,[232,200,74]],
-                     [0.86,[236,122,28]],[0.95,[214,61,46]],[1,[140,20,26]]];
+const V3_HEAT_STOPS=[[0,[10,45,140]],[0.12,[30,111,235]],[0.30,[70,179,201]],
+                     [0.50,[63,185,80]],[0.68,[232,200,74]],[0.84,[236,122,28]],
+                     [0.95,[214,61,46]],[1,[140,20,26]]];
 /* `model` is explicit because the two scales coexist on one page: the gauge and
    the matrix follow the SERVING model, while the main chart follows whichever
    series it managed to load. Those can differ -- v3 gauge, v2 chart, if the
@@ -786,7 +805,12 @@ function renderOverlay(spot){
 }
 
 /* ---- main chart ---- */
-const COL={grid:"#1a2230",font:"#8b95a7",blue:"#5b8def",risk:"#ef5366"};
+/* `px` is the price line's default colour. It used to be the same blue family
+   the heat map uses for its cold end, so a blue price line and a blue "cheap"
+   reading were competing for the same meaning. White belongs to neither end of
+   the risk ramp, which is exactly why it is the right colour for the series
+   that is not a risk reading. `blue` is kept: other widgets still use it. */
+const COL={grid:"#1a2230",font:"#8b95a7",blue:"#5b8def",risk:"#ef5366",px:"#eef2f8"};
 
 /* Which model the chart is plotting.
    Both v3 and v2 are displayed on 0-1, so the axis itself is the same shape --
@@ -858,7 +882,7 @@ function chartTraces(){
     ? t("chart_tip_v3")+" %{y:.2f} · conf %{customdata}/10<extra></extra>"
     : "Risk %{y:.3f} · conf %{customdata}/10<extra></extra>";
   const out=[];
-  if(SHOW.price) out.push({x:CUR.t,y:CUR.p,yaxis:"y",mode:"lines",line:{color:COL.blue,width:1.1},hovertemplate:"%{x|%d %b %Y}<br>$%{y:,.0f}<extra></extra>"});
+  if(SHOW.price) out.push({x:CUR.t,y:CUR.p,yaxis:"y",mode:"lines",line:{color:COL.px,width:1.1},hovertemplate:"%{x|%d %b %Y}<br>$%{y:,.0f}<extra></extra>"});
   if(SHOW.risk)  out.push({x:CUR.t,y:CUR.r,yaxis:"y2",mode:"lines",connectgaps:false,line:{color:COL.risk,width:1.0},customdata:CUR.c,hovertemplate:rhov});
   return out;}
 /* Axis bounds follow whichever series is loaded: v2 starts 2011-01-13 at a few
@@ -918,11 +942,16 @@ function chartLayout(){
        range:[Math.log10(P_MIN*0.7),Math.log10(P_MAX*1.4)],minallowed:Math.log10(P_MIN*0.55),maxallowed:Math.log10(P_MAX*1.7),fixedrange:true}
     : {title:{text:"USD",font:{color:COL.font}},type:"linear",gridcolor:COL.grid,zeroline:false,color:COL.font,tickformat:"$,.2s",
        range:[0,P_MAX*1.06],minallowed:0,maxallowed:P_MAX*1.3,fixedrange:true};
-  /* A hair of headroom above 1 under v3. 60 days print exactly 1.00 (the 2017
-     and 2021 tops), and on a hard [0,1] range a line at the maximum draws on
-     the frame's top pixel and reads as if it had gone past it. dtick keeps the
-     labels at 0, 0.2 ... 1.0 so the padding is invisible. */
-  const y2hi = CHART_MODEL==="v3" ? R_MAX*1.03 : R_MAX;
+  /* Breathing room at BOTH ends under v3, not just the top.
+     60 days print exactly 1.00 (the 2017 and 2021 tops) and 6 print 0.05, and
+     on a hard [0,1] range those draw on the frame's own pixels -- which is what
+     made near-1 readings look like they had left the plot. The bottom needs it
+     for the same reason: the cycle lows are the most interesting readings on
+     the chart and they were sitting on the floor. tick0/dtick pin the labels to
+     0.0, 0.2 ... 1.0, so the padding is invisible and no tick is invented. */
+  const V3_PAD = 0.03;
+  const y2lo = CHART_MODEL==="v3" ? -V3_PAD*R_MAX : 0;
+  const y2hi = CHART_MODEL==="v3" ? R_MAX*(1+V3_PAD) : R_MAX;
   /* An axis with nothing on it is a label for data that is not there. The heat
      map always draws the price line, so the USD axis stays for it. */
   const showPx = SHOW.price || heatMap, showRk = SHOW.risk && !heatMap;
@@ -933,9 +962,10 @@ function chartLayout(){
   xaxis:{gridcolor:COL.grid,zeroline:false,color:COL.font,type:"date",rangeslider:{visible:false},range:chartRangeWindow(),minallowed:X_MIN,maxallowed:X_MAX},
   yaxis:yax,
   yaxis2:{title:{text:heatMap?"":t(CHART_MODEL==="v3"?"chart_y2_v3":"chart_y2_v2"),font:{color:COL.font}},
-          overlaying:"y",side:"right",range:[0,y2hi],minallowed:0,maxallowed:y2hi,fixedrange:true,
+          overlaying:"y",side:"right",range:[y2lo,y2hi],minallowed:y2lo,maxallowed:y2hi,fixedrange:true,
           gridcolor:"rgba(0,0,0,0)",zeroline:false,color:COL.font,
           tickformat:CHART_MODEL==="v3"?".1f":undefined,
+          tick0:CHART_MODEL==="v3"?0:undefined,
           dtick:CHART_MODEL==="v3"?0.2:undefined,
           showticklabels:showRk,visible:showRk}};}
 function drawChart(){ return Plotly.react("chartPlot",chartTraces(),chartLayout(),{responsive:true,scrollZoom:true,displayModeBar:false,displaylogo:false,doubleClick:"reset"}); }
