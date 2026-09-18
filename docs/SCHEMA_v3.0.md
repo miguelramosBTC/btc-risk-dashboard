@@ -279,6 +279,21 @@ full rows, pillars, bands and diagnostics stay in the tape and the window.
 > one, and `model/v3/tests/test_phase4.py` asserts the type and range rather
 > than trusting the column name.
 
+**The file stays canonical; the display converts.** `r` remains `risk100`
+because that is what the tape, `/api/risk` and the bot all carry. `app.js`
+divides by 100 when it loads the series so the chart axis reads 0–1 like the
+gauge. The conversion is lossless: `risk100/100` equals the tape's `risk01` on
+every row, max difference 0.0e+00 across 5,307 rows. Do not "simplify" this by
+publishing 0–1 in the file — the integer is the canonical form and three other
+consumers read it.
+
+`risk01` and `risk100` both saturate at 1.00 / 100 for any day whose causal rank
+reaches **0.995**, because the CDF is clipped to [0.001, 0.999] and `risk01` is
+rounded to 2 dp. Sixty days in the tape print the maximum (55 in 2017, 3 in
+2021, 2 in 2013); 24 of them sit at the hard clip. The chart's y2 axis carries
+3% headroom above 1 so a day at the maximum does not draw on the frame and read
+as if it had exceeded it.
+
 Why the chart may not recompute: an expanding CDF means a recompute today moves
 2017's rank (rule 1). A browser-side history would therefore disagree with the
 tape printed above it. The risk line stops at the last committed row and the
