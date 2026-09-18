@@ -221,6 +221,30 @@ No v3 compute exists yet. v2 remains the public gauge.
 
     Verified end to end by injecting the real body through `BOT_FAKE_LLM_TEXT`: the correct version passes with `facts ✓`, and the version carrying `2026-03-14` is rejected, retried once, and refused — `body unusable ... — degrading`. Ten new checks in `bot/test_assembly.py`, including the exact regression string and an assertion that the waiver path re-checks facts. Not validated, and stated as a limitation: the **band word** (`BELOW MID` and friends) is handed to the LLM and is not checked against `level_word`.
 
+44. **The heat map's cold end was as wrong as v2's hot end had been, and by the same mistake.** Decision 42 tightened the red to the top 7% and left the blue alone. The blue then opened at azure and reached teal only at 0.45, so **0.00–0.40 — 29.0% of all history, 1,540 days — rendered as one flat marine blue**: 0.05 and 0.38 looked identical while meaning opposite things. Reserving one end for the extremes and not the other was an inconsistency, not a design.
+
+    Deep marine is now the mirror of deep red, sized to match:
+
+    | intense colour | band | share of the 5,307-day tape |
+    |---|---|---|
+    | deep marine | ≤ 0.12 | **6.09%** |
+    | intense red | ≥ 0.95 | **7.22%** |
+
+    Measured against the lows the bottom gate names, so the extremes keep the strongest colour: 2022-11-21 (0.050) and 2015-01-14 (0.080) are deep marine, 2026-06-30 (0.100) marine/azure, 2018-12-15 (0.170) blue-teal. Between the two ends the ramp is stretched — azure 0.12, teal 0.30, green 0.50, yellow 0.68, orange 0.84 — and stays monotonic cool-to-hot so warmth still reads as extension.
+
+    Measured effect on the band that prompted it, as total RGB path length travelled:
+
+    | span | before | after |
+    |---|---|---|
+    | 0.00–0.40 | 117 | **292** |
+    | full 0–1 | 562 | **747** |
+
+    The ten 26ths-buckets inside 0.00–0.40 now span an endpoint separation of 137 against 66 before.
+
+45. **Near-1 readings really were falling outside the plot, and the 3% headroom only fixed one end.** The maintainer's original ">100" report was right about the symptom and I was only half right about the cause: it is a rendering artefact, but the fix in decision 41 padded the top only. The bottom had the identical problem and it matters more — the cycle lows are the most interesting readings on the chart and six days print 0.05, which drew on the frame's own floor. The y2 range is now **[-0.03, 1.03]** with `tick0 0, dtick 0.2`, so 1.00 sits at **97.2%** of plot height and 0.05 at **7.5%**, both clear of the frame, while the labels still read 0.0 … 1.0 and no tick is invented. **The tape was never wrong**: the series runs 5 to 100 inclusive with zero values above, as decision 41 records.
+
+46. **The price line is white by default.** It was `#5b8def` — the same blue family the heat map uses for its cold end — so a blue price line and a blue "cheap" reading competed for one meaning, and under the heat map the eye had to separate two blues that meant different things. White belongs to neither end of the risk ramp, which is exactly why it suits the series that is not a risk reading. The legend swatch moved with it; `COL.blue` stays because other widgets use it.
+
 ### Ship gates (spec §12.1) — `model/v3/validate.py` exits non-zero on any failure
 
 Full causal tape: **reach** (2013-12-04, 2017-12-17, 2021-04-14, 2021-11-10, 2024-03-13, 2025-10-06 in the top quintile of the tape up to that day) · **order** (2025-10-06 not below 2024-03-13 without a written G/Σ residual explanation) · **bottom** (2015-01-14, 2018-12-15, 2022-11-21 in the bottom quintile) · **low-vol rich** (synthetic: high V + falling κ does not lower Σ) · **collinearity** (max |r| among mapped pillars ≤ 0.80) · **nested baseline** (walk-forward Spearman of −risk vs next-90-day return, 2014 → embargo, beats Mayer percentile alone, MVRV percentile alone, 200-week-SMA distance; if MVRV alone wins, strip ornament pillars, never raise w_V above 0.40) · **rewrite probe** (compute twice, committed rows byte-stable; a v3.1 weight change does not touch `v3.0.jsonl`). Second table, holdout year only, no parameter chosen from it.
