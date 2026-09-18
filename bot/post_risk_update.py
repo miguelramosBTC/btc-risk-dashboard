@@ -126,16 +126,24 @@ def level_emoji(r: float, model: str = "v3") -> str:
     return "🔴"
 
 
-def meaning_line(r: float, date: str, model: str) -> str:
+def meaning_line(r: float, date: str, model: str, with_date: bool = True) -> str:
     """What the number means, in the number's own words.
 
     True ONLY of v3: v2's score is a blend of percentiles, not a percentile, so
     claiming "more extended than X% of its history" about a v2 reading would be
     the same false claim the v3 rank change was made to fix.
+
+    `with_date=False` is the version handed to the LLM. The date is a fact the
+    model has no way to get right and no need to restate: `header_lines` already
+    prints "· as of <date>" from the committed row, and when the body was given
+    the date it wrote 2026-03-14 -- the few-shot example's date -- against a row
+    dated 2026-09-16. A fact the generator cannot corrupt is better than a fact
+    it is asked not to.
     """
     if model == "v2":
-        return f"v2 blended score for {date}"
-    return f"more extended than {round(r * 100)}% of its history to {date}"
+        return f"v2 blended score for {date}" if with_date else "v2 blended score"
+    base = f"more extended than {round(r * 100)}% of its history"
+    return f"{base} to {date}" if with_date else base
 
 
 # --------------------------------------------------------------------------- #
@@ -339,10 +347,15 @@ Hard rules:
   history" is the only framing. A high reading is common, not an alarm.
 - No hashtags. No @ symbols (write names plainly). No links or URLs. No
   emojis. No markdown formatting. No "Sources:" section.
+- NEVER write a calendar date, and never say what date the reading is "as of".
+  The post's header line already carries that, taken from the published row.
+  Write "today" or "this week" instead. A date you write is a date you guessed.
+- State the reading EXACTLY as given: the same two decimals and the same
+  percentage, or not at all. Do not round it, restate it to one decimal, or
+  infer a different percentage from it.
 - One story per post. If the day is truly dead, satirize the silence itself."""
 
-LONG_FEWSHOT_USER = """Risk: 0.41 (BELOW MID) — more extended than 41% of its history to 2026-03-14 and than 58% of the last 365 days
-Date: 2026-03-14
+LONG_FEWSHOT_USER = """Risk: 0.41 (BELOW MID) — more extended than 41% of its history and than 58% of the last 365 days
 Headlines:
 - EU finance ministers advance plan requiring traceability for all transfers above €200 (Reuters) :: Draft framework would extend reporting duties to self-custody wallets; final vote expected in June.
 - Spot Bitcoin ETF inflows hit three-week high (CoinDesk) :: Net inflows across US funds reached the highest level since February.
@@ -362,6 +375,13 @@ They can trace two hundred euros. They still can't print a single sat."""
 
 
 def build_long_user(risk, level, hist, date, headlines, grok_search):
+    """`hist` must be the DATE-FREE variant -- see meaning_line(with_date=False).
+
+    The exact day is deliberately withheld. It used to be passed as "Date: ..."
+    and the model copied the few-shot's date into the body instead of the row's.
+    A coarse month anchor keeps a topical column temporally oriented without
+    handing over a precise date it can restate wrongly.
+    """
     hl = "\n".join(f"- {h['title']}" + (f" :: {h['desc']}" if h["desc"] else "")
                    for h in headlines) or "(no feed headlines available)"
     extra = ("\nYou also have live x_search and web_search tools: use them to find "
@@ -370,7 +390,13 @@ def build_long_user(risk, level, hist, date, headlines, grok_search):
              "something bigger is trending.") if grok_search else \
             ("\nNo live search is available: pick from the headlines above only, "
              "and do not reference any event not listed.")
-    return (f"Risk: {risk:.2f} ({level}) — {hist}\nDate: {date}\n"
+    month = ""
+    try:
+        month = dt.date.fromisoformat(str(date)).strftime("%B %Y")
+    except Exception:                                     # noqa: BLE001
+        month = ""
+    when = f"It is {month}. Do not write any date.\n" if month else ""
+    return (f"Risk: {risk:.2f} ({level}) — {hist}\n{when}"
             f"Headlines:\n{hl}{extra}\nWrite today's post.")
 
 
@@ -507,6 +533,71 @@ def long_text_ok(t: str, min_w: int) -> str:
         return "contains investment advice"
     if word_count(t) < min_w:
         return f"too short ({word_count(t)} words)"
+    return ""
+
+
+# --------------------------------------------------------------------------- #
+#  FACTS GUARD — the generated body may not restate the reading wrongly
+#
+#  Length, refusal-shape and advice were validated from the start; the NUMBERS
+#  were not, which is the wrong way round for a model whose entire claim is that
+#  the number means what it says. A run on 2026-09-17 produced "0.32 today ...
+#  more extended than 32 percent of its history to 2026-03-14" against a row
+#  dated 2026-09-16: the value and the percentage were right and the date was
+#  the few-shot example's, copied. Nothing shipped only because the X API
+#  returned 402 credits depleted.
+#
+#  A facts failure is NEVER waived. The "too short but usable" tolerance below
+#  explicitly re-checks the facts, because degrading to a duller post is always
+#  cheaper than publishing a wrong one.
+# --------------------------------------------------------------------------- #
+ISO_DATE_PAT = re.compile(r"\b\d{4}-\d{1,2}-\d{1,2}\b")
+READING_PAT = re.compile(r"\b0\.\d{1,2}\b")
+PCT_PAT = re.compile(r"\b(\d{1,3})\s*(?:%|per ?cent(?:age)?)", re.I)
+# Only judge a number that is presented AS the reading. A macro column may
+# legitimately say "0.25 percentage points" about a rate move, and rejecting
+# that would push the bot into its fallback form for no reason.
+_READING_CTX = ("model", "risk", "reading", "read", "sits", "score",
+                "extend", "percentile", "gauge")
+
+
+def _sentence_around(t: str, start: int, end: int) -> str:
+    """The sentence the match sits in, lowercased.
+
+    A fixed character window does not work: the reading tie-in paragraph sits
+    next to the macro paragraph, so a 90-character window around "0.25
+    percentage points" reached back into "...more extended than 32% of its own
+    history" and condemned a rate move as a mis-stated reading. The sentence is
+    the unit that actually decides whether a number is presented AS the reading.
+    """
+    lo = max((t.rfind(c, 0, start) for c in ".!?\n"), default=-1) + 1
+    hi = min((p for p in (t.find(c, end) for c in ".!?\n") if p != -1),
+             default=len(t))
+    return t[lo:hi].lower()
+
+
+def facts_ok(t: str, risk: float, pct: int) -> str:
+    """'' when the body's facts match what was handed in, else why not."""
+    if not t:
+        return ""
+    m = ISO_DATE_PAT.search(t)
+    if m:
+        return f"body writes a date ({m.group(0)}); the header carries the as-of date"
+    want = f"{risk:.2f}"
+    for m in READING_PAT.finditer(t):
+        got = m.group(0)
+        if got == want:
+            continue
+        ctx = _sentence_around(t, m.start(), m.end())
+        if any(k in ctx for k in _READING_CTX):
+            return f"body states the reading as {got}, not {want}"
+    for m in PCT_PAT.finditer(t):
+        n = int(m.group(1))
+        if n == pct:
+            continue
+        ctx = _sentence_around(t, m.start(), m.end())
+        if "extend" in ctx or "histor" in ctx or "percentile" in ctx:
+            return f"body claims {n}% of its history, not {pct}%"
     return ""
 
 
@@ -869,26 +960,45 @@ def generate_body(risk, level, hist, ddate, today, min_w, max_w):
     umsg = build_long_user(risk, level, hist, ddate, headlines, grok)
     fewshots = [("user", LONG_FEWSHOT_USER), ("assistant", LONG_FEWSHOT_ASSISTANT)]
 
+    pct = round(risk * 100)
+
+    def check(b):
+        """Tone and length first, then the facts. Both must hold."""
+        return long_text_ok(b, min_w) or facts_ok(b, risk, pct)
+
     body = sanitize_long(call_llm(sp, fewshots, umsg, 2200, today))
-    problem = long_text_ok(body, min_w)
-    if problem and "too short" in problem:
-        print(f"[llm] {problem} — retrying once with expand instruction")
-        retry_msg = (umsg + f"\n\nYour previous draft had {word_count(body)} "
-                     f"words. Write a NEW version between {min_w} and {max_w} "
-                     f"words with more depth. Same rules.")
+    problem = check(body)
+    if problem:
+        print(f"[llm] {problem} — retrying once")
+        if "too short" in problem:
+            retry_msg = (umsg + f"\n\nYour previous draft had {word_count(body)} "
+                         f"words. Write a NEW version between {min_w} and {max_w} "
+                         f"words with more depth. Same rules.")
+        else:
+            retry_msg = (umsg + f"\n\nYour previous draft was REJECTED: {problem}. "
+                         f"Write a NEW version obeying every rule. Write no "
+                         f"calendar date at all, and state the reading only as "
+                         f"{risk:.2f} or as {pct}% of its history — never any "
+                         f"other number.")
         body2 = sanitize_long(call_llm(sp, fewshots, retry_msg, 2600, today))
-        if not long_text_ok(body2, min_w):
+        p2 = check(body2)
+        if not p2:
             body, problem = body2, ""
-        elif word_count(body2) > word_count(body):
-            body, problem = body2, long_text_ok(body2, min_w)
+        elif ("too short" in p2 and "too short" in problem
+              and word_count(body2) > word_count(body)):
+            body, problem = body2, p2
     floor = max(80, min_w // 2)
-    if problem and "too short" in problem and word_count(body) >= floor:
+    # A short-but-usable draft is tolerated. A draft with wrong facts never is,
+    # hence the explicit re-check: degrading to the duller fallback post is
+    # always cheaper than publishing a number that is not the published one.
+    if (problem and "too short" in problem and word_count(body) >= floor
+            and not facts_ok(body, risk, pct)):
         print(f"[llm] still short ({word_count(body)}w ≥ {floor}) — using anyway")
         problem = ""
     if not problem and body:
-        print(f"[bot] body: {word_count(body)} words")
+        print(f"[bot] body: {word_count(body)} words · facts ✓")
         return body, True
-    print(f"[llm] body unusable ({problem or 'no output'})")
+    print(f"[llm] body unusable ({problem or 'no output'}) — degrading")
     return "", False
 
 
@@ -937,7 +1047,14 @@ def main() -> int:
     level = level_word(risk, model)
     # "more extended than X% of its history to DATE" + "and than Y% of the last
     # 365 days" -- two reference sets, each named.
+    #
+    # Two variants. `hist` carries the as-of date and goes into the header,
+    # where the code prints it from the committed row and cannot get it wrong.
+    # `hist_llm` withholds it, because the generator's one job here is prose and
+    # a date is not prose: given the date it copied the few-shot's instead.
     hist = f"{meaning_line(risk, ddate, model)} {history_line(data['r'], risk)}".strip()
+    hist_llm = (f"{meaning_line(risk, ddate, model, with_date=False)} "
+                f"{history_line(data['r'], risk)}").strip()
 
     # ---- generate body + assemble ------------------------------------------
     # fmt: text (single post) OR thread (list of posts). Exactly one is set.
@@ -947,7 +1064,7 @@ def main() -> int:
         min_w = int(env("LONG_MIN_WORDS", "150"))
         max_w = int(env("LONG_MAX_WORDS", "250"))
         max_tweets = max(2, int(env("THREAD_MAX_TWEETS", "8")))
-        body, used_llm = generate_body(risk, level, hist, ddate, today, min_w, max_w)
+        body, used_llm = generate_body(risk, level, hist_llm, ddate, today, min_w, max_w)
         if body:
             if re.search(r"https?://|\b[\w-]+\.(?:com|net|org|io|xyz|co|ai)\b",
                          body, re.I):
@@ -963,7 +1080,7 @@ def main() -> int:
     elif mode == "long":
         min_w = int(env("LONG_MIN_WORDS", "250"))
         max_w = int(env("LONG_MAX_WORDS", "750"))
-        body, used_llm = generate_body(risk, level, hist, ddate, today, min_w, max_w)
+        body, used_llm = generate_body(risk, level, hist_llm, ddate, today, min_w, max_w)
         if body:
             text = build_long(risk, ddate, hist, body, compose_tags(body, today), model)
             fmt = "long"
