@@ -291,6 +291,25 @@ No v3 compute exists yet. v2 remains the public gauge.
 
     Stops at 0, 0.12, 0.95 and 1.00 remain byte-identical for the third revision running, so the extremes still hold exactly the shares decision 44 set: deep marine ≤ 0.12 is 6.09% of days, intense red ≥ 0.95 is 7.22%.
 
+50. **The heat map now uses the gauge's own scale; the bespoke ramps were the mistake.** Decisions 42, 44, 48 and 49 each tuned a ramp invented for the chart, and the accumulated result put a **dark blue at risk 0.44** — on a scale where blue means "cheap", simply wrong, and the maintainer caught it. Chasing properties (no green, no grey) had drifted the chart away from the thing it sits under.
+
+    The colours and their order are now lifted verbatim from the `riskGrad` stops in `index.html`: `#1e6feb` → `#46b3c9` → `#e8c84a` → `#ec7a1c` → `#d63d2e` → `#7d1620`. Verified against the live DOM rather than a copied constant — every gauge stop colour is reproduced exactly in the heat ramp at its remapped position.
+
+    Only the **positions** differ, because the gauge spreads its extremes evenly and a fifteen-year chart should not:
+
+    | band | colour | share of the tape |
+    |---|---|---|
+    | risk < 0.03 | darkest blue | **0.00%** — see below |
+    | risk < 0.08 | intense blue | 1.34% (71 days) |
+    | risk > 0.92 | intense red | 9.36% (497 days) |
+    | risk > 0.97 | darkest red | 4.54% (241 days) |
+
+    The gauge's sequence is stretched across the 0.08–0.92 middle: cyan 0.29, yellow 0.54, orange 0.75. The darker blue below 0.03 mirrors the gauge's own red darkening, derived by applying its channel ratios (`#d63d2e`→`#7d1620`, 0.58/0.36/0.70) to the blue end rather than picking a shade by eye.
+
+    **Continuity measured, not assumed:** sampling at 0.001 intervals, the largest single-channel change between adjacent samples is **3 of 255**. The flat holds at [0.03, 0.08] and [0.92, 0.97] change slope, never colour, so "reserved for" produces no visible edge.
+
+    Two things recorded rather than left to be found later. The **darkest blue never appears on the chart** — the tape's minimum is 0.05 and the CDF is clipped at 0.001, so no published day has been below 0.03; the stop exists for symmetry and shows only on the legend strip. And matching the gauge verbatim **reinstates a yellow-green over 0.35–0.44** (8.6% of the ramp, 6.7% of days), which decision 48 had removed. That is a deliberate trade, not an oversight: one scale across the page was judged worth more than the green-free property, and it is a one-line change to suppress if that judgement is ever reversed.
+
 ### Ship gates (spec §12.1) — `model/v3/validate.py` exits non-zero on any failure
 
 Full causal tape: **reach** (2013-12-04, 2017-12-17, 2021-04-14, 2021-11-10, 2024-03-13, 2025-10-06 in the top quintile of the tape up to that day) · **order** (2025-10-06 not below 2024-03-13 without a written G/Σ residual explanation) · **bottom** (2015-01-14, 2018-12-15, 2022-11-21 in the bottom quintile) · **low-vol rich** (synthetic: high V + falling κ does not lower Σ) · **collinearity** (max |r| among mapped pillars ≤ 0.80) · **nested baseline** (walk-forward Spearman of −risk vs next-90-day return, 2014 → embargo, beats Mayer percentile alone, MVRV percentile alone, 200-week-SMA distance; if MVRV alone wins, strip ornament pillars, never raise w_V above 0.40) · **rewrite probe** (compute twice, committed rows byte-stable; a v3.1 weight change does not touch `v3.0.jsonl`). Second table, holdout year only, no parameter chosen from it.

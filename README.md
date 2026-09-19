@@ -44,27 +44,28 @@ Two colour ramps, because they answer different questions:
 - **Gauge, matrix and ranges table** use the four published quintile bands
   (0–0.20 / 0.20–0.60 / 0.60–0.80 / 0.80–1.00), so the colour agrees with the
   gauge, the email and the bot.
-- **The heat map** reserves its two intense colours for the cycle extremes, at
-  both ends and near-symmetrically: **deep marine below 0.12** (6.1% of days)
-  and **intense red above 0.95** (7.2%), deepening to navy at 0.00 and to a
-  dark red at 1.00. Everything between is stretched so the middle of the range
-  actually travels, and it carries **no green and no washed-out neutral** —
-  azure 0.12, teal 0.30, deep blue 0.44, dark plum 0.53, bronze 0.63, gold
-  0.75, orange 0.86.
+- **The heat map** uses the **gauge's own scale**, verbatim — blue, cyan,
+  yellow, orange, red, dark red, lifted from the `riskGrad` stops in
+  `index.html` — so the arc above the number and the chart below it speak one
+  visual language. Only the *positions* differ, because the gauge spreads its
+  extremes evenly and a 15-year chart should not. The two intense ends are
+  reserved: **intense blue below 0.08** (1.34% of the tape, 71 days) and
+  **intense red above 0.92** (9.36%, 497 days), with a darker blue below 0.03
+  and a darker red above 0.97 (4.54%). The gauge's sequence is stretched across
+  the 0.08–0.92 middle, putting cyan at 0.29, yellow at 0.54, orange at 0.75.
 
-  Those two exclusions fight each other. A straight RGB line from a cool to a
-  warm has only two routes: keep green high and pass *through* green, or let
-  the channels converge and pass through *grey*. The ramp therefore goes round
-  the other side of the wheel — blue 225° → plum 340° → bronze 24° — which is
-  neither, and which **darkens** through the middle (value dips to 0.41)
-  instead of brightening, so the mid-scale recedes and both extremes carry the
-  eye. Verified by hue angle rather than by eye: zero samples in the green
-  band, minimum saturation 0.21 (no true grey anywhere), and the share below
-  saturation 0.30 down from 9.4% of the tape's days to 2.0%.
-  Two earlier versions were wrong in the same way at opposite ends: v2's stops
-  reddened 15.4% of history, and the first v3 cold end left **0.00–0.40 — 29.0%
-  of all history, 1,540 days — as one flat marine blue**, so 0.05 and 0.38
-  looked identical while meaning opposite things.
+  Continuity was measured, not assumed: sampling at 0.001 intervals, the largest
+  single-channel change between adjacent samples is **3 of 255**. The flat holds
+  at [0.03, 0.08] and [0.92, 0.97] are what "reserved for" means — they change
+  slope, never colour, so there is no visible edge.
+
+  Two things stated rather than left to be discovered. The **darkest blue never
+  appears on the chart**: the tape's minimum is 0.05 and the CDF is clipped at
+  0.001, so no published day has been below 0.03; that stop exists for symmetry
+  with the red end and shows only on the legend. And taking the gauge's scale
+  verbatim **brings back a yellow-green over 0.35–0.44** (6.7% of days) — the
+  gauge's own cyan-to-yellow leg. That is a deliberate trade: matching the gauge
+  was judged worth more than the green-free property an earlier revision had.
 
 A consequence worth stating: the two most recent dollar all-time highs print
 **0.90** (2024-12-17) and **0.80** (2025-10-06), so they come out orange and
