@@ -662,80 +662,44 @@ const V2_STOPS=[[0,[30,111,235]],[0.22,[70,179,201]],[0.48,[232,200,74]],[0.70,[
 const V3_STOPS=[[0,[63,185,80]],[0.20,[70,179,201]],[0.60,[236,122,28]],[0.80,[214,61,46]],[1,[200,46,52]]];
 
 /* ---- the heat-map ramp -----------------------------------------------------
- * The heat map answers a different question from the gauge. The gauge asks
- * "where are we today" against the four published quintile bands, so V3_STOPS
- * sits on those. The heat map colours a 15-year price line, so what it needs to
- * do is make the handful of genuine cycle extremes findable at a glance -- and
- * v2's stops reddened 15.4% of all history, which is a colour nothing rare can
- * stand out from.
+ * THIS IS THE GAUGE'S OWN SCALE, with the positions remapped. The colours and
+ * their order are lifted verbatim from the `riskGrad` stops in index.html --
+ * blue, cyan, yellow, orange, red, dark red -- so the arc above the number and
+ * the chart below it speak the same visual language. Earlier versions invented
+ * their own sequences and ended up with a dark blue sitting at 0.44, which on a
+ * scale where blue means "cheap" is simply wrong.
  *
- * Intense red is therefore reserved for the top of the range. Measured against
- * every running-ATH peak in the tape:
+ * What changes is WHERE each colour falls, because the gauge spreads its
+ * extremes evenly and a 15-year chart should not. The two intense ends are
+ * reserved:
  *
- *     2012-12-13  $14        0.76      2021-11-08  $67,542    0.91
- *     2013-12-04  $1,135     0.94      2024-12-17  $106,116   0.90
- *     2017-12-16  $19,641    1.00      2025-10-06  $124,824   0.80
- *     2020-12-31  $29,023    0.98
+ *     risk < 0.08   intense blue    1.34% of the tape (71 days)
+ *     risk > 0.92   intense red     9.36% (497 days)
+ *     risk < 0.03   darkest blue    0.00% -- see below
+ *     risk > 0.97   darkest red     4.54% (241 days)
  *
- * Occupancy of the upper tail: >=0.86 is 19% of days, >=0.95 is 7.2%, and
- * >=1.00 is 1.1% (60 days, all in 2013/2017/2021). So red opens at 0.95 and
- * deepens to 1.00, which is about a fortnight of colour per cycle.
+ * The gauge's own sequence is stretched across the 0.08-0.92 middle, so cyan
+ * lands at 0.29, yellow at 0.54 and orange at 0.75.
  *
- * The visible consequence, stated rather than hidden: 2025-10-06 prints 0.80
- * and 2024-12-17 prints 0.90, so the two most recent dollar all-time highs
- * come out amber and orange, NOT red. That is the documented order inversion
- * (higher high in dollars, lower high on extension and cost basis) showing up
- * in the picture. Reddening them would mean painting over the model's actual
- * finding to make the chart look like the price chart.
+ * The darkest blue never appears on the chart. The tape's minimum is 0.05 and
+ * the empirical CDF is clipped at 0.001, so no published day has ever been
+ * below 0.03; that stop exists for symmetry with the red end and shows only on
+ * the legend strip. Said rather than left for someone to discover.
  *
- * THE COLD END IS TREATED THE SAME WAY, and it was not at first. The first
- * version opened at azure and reached teal only at 0.45, so 0.00-0.40 -- which
- * is 29.0% of all history, 1,540 days -- rendered as one flat marine blue.
- * 0.05 and 0.38 are radically different readings and looked identical.
+ * Continuity was measured, not assumed: sampling at 0.001 intervals, the
+ * largest single-channel change between adjacent samples is 3 of 255. The flat
+ * holds at [0.03, 0.08] and [0.92, 0.97] are what "reserved for" means -- they
+ * change slope, never colour, so there is no visible edge.
  *
- * Deep marine is now the mirror of deep red: it holds [0, 0.12], which is
- * 6.1% of days against red's 7.2%. Measured against the lows the bottom gate
- * names, so the extremes keep the strongest colour:
- *
- *     2022-11-21  $15,778   0.050   deep marine
- *     2015-01-14  $176      0.080   marine
- *     2026-06-30  $58,525   0.100   marine/azure
- *     2018-12-15  $3,185    0.170   blue-teal
- *
- * Everything between is stretched so the middle of the range actually travels,
- * and it carries NO GREEN and no washed-out neutral: teal 0.30, deep blue 0.44,
- * dark plum 0.53, bronze 0.63, gold 0.75, orange 0.86.
- *
- * Two constraints that fight each other, and how the path satisfies both.
- * Interpolating a cool to a warm in RGB has exactly two straight-line routes:
- * keep G high and pass THROUGH green (teal -> yellow), or let all three
- * channels converge and pass through GREY (blue -> amber). The first version
- * took the second route and bottomed out at saturation 0.08 while the value
- * PEAKED at 0.91 -- a pale band that read as white on a dark page.
- *
- * The fix is to go round the other side of the wheel: blue 225 deg -> plum
- * 340 deg -> bronze 24 deg. That is the one route that is neither green nor
- * grey, and it also DARKENS through the middle (value dips to 0.41) instead of
- * brightening, so the mid-scale recedes and both extremes carry the eye --
- * which is what the model actually says about the middle of its own range.
- *
- * Measured over 1,001 samples, weighted by the tape's days:
- *   green (hue 80-170, sat > 0.25) : 0 samples, unchanged from before
- *   saturation below 0.30          : 13.0% -> 3.5% of ramp, 9.4% -> 2.0% of days
- *   minimum saturation anywhere    : 0.08 -> 0.21  (no true grey remains)
- *   peak lightness in the middle   : 0.91 -> 0.84, with a 0.41 trough
- *
- * The plum pivot cannot be mistaken for the top red: 340 deg at saturation
- * 0.35 and value 0.47, against red's 5 deg at 0.79 and 0.84. Zero mid-ramp
- * samples sit in the red band with comparable saturation and lightness.
- *
- * The two ends are untouched, so their shares of the tape are exactly as
- * before: deep marine <= 0.12 is 6.09% of days, intense red >= 0.95 is 7.22%.
+ * Note for whoever reads this next: taking the gauge's scale verbatim brings
+ * back a yellow-green over risk 0.35-0.44 (8.6% of the ramp, 6.7% of days),
+ * which is the gauge's own cyan-to-yellow leg. That was a deliberate trade,
+ * not an oversight -- matching the gauge was judged worth more than the
+ * green-free property an earlier revision had.
  */
-const V3_HEAT_STOPS=[[0,[10,45,140]],[0.12,[30,111,235]],[0.30,[58,158,186]],
-                     [0.44,[40,96,148]],[0.53,[120,78,92]],[0.63,[190,128,44]],
-                     [0.75,[232,190,70]],[0.86,[236,122,28]],[0.95,[214,61,46]],
-                     [1,[140,20,26]]];
+const V3_HEAT_STOPS=[[0,[18,40,163]],[0.03,[30,111,235]],[0.08,[30,111,235]],
+                     [0.29,[70,179,201]],[0.538,[232,200,74]],[0.748,[236,122,28]],
+                     [0.92,[214,61,46]],[0.97,[214,61,46]],[1,[125,22,32]]];
 /* `model` is explicit because the two scales coexist on one page: the gauge and
    the matrix follow the SERVING model, while the main chart follows whichever
    series it managed to load. Those can differ -- v3 gauge, v2 chart, if the
