@@ -1,8 +1,8 @@
 ==============================================================================
 v3.0 SHIP GATES
-  scored on : COMMITTED tape series/v3.0.jsonl — 5308 rows, 2012-03-07 -> 2026-09-17
+  scored on : COMMITTED tape series/v3.0.jsonl — 5309 rows, 2012-03-07 -> 2026-09-18
   collinear : COMMITTED tape — published V/G/T/S, no recompute
-  alt-specs : rebuilt from coinmetrics dump + API top-up, 2012-03-07 -> 2026-09-17
+  alt-specs : rebuilt from coinmetrics dump + API top-up, 2012-03-07 -> 2026-09-18
 ==============================================================================
 [PASS] Reach — every cycle high in the top quintile of its own causal history
        PASS  2013-12-04: causal rank 0.9407 (needs >= 0.800, margin +0.1407)
@@ -30,14 +30,14 @@ v3.0 SHIP GATES
        PASS  cheap+quiet stays low-fragility (bottom test not sacrificed)
 
 [PASS] Collinearity — partial |r(ds_i, ds_j | dlog P)| < 0.70 on V/G/T
-             Mode A common live span 2014-05-17 -> 2026-09-17  n=4507
+             Mode A common live span 2014-05-17 -> 2026-09-18  n=4508
              pillars read from: COMMITTED tape (published pillars)
                pair   partial (BLOCKER)   level (disclose)   raw diff (diagnose)
                 V-G               0.337              0.850                 0.798
-                V-T               0.526              0.786                 0.883
-                G-T               0.328              0.588                 0.782
+                V-T               0.527              0.786                 0.883
+                G-T               0.331              0.587                 0.783
              price elasticity of each family: r(dV,dlogP)=+0.885  r(dG,dlogP)=+0.794  r(dT,dlogP)=+0.854  r(dS,dlogP)=+0.518
-       PASS  no family pair reaches the partial threshold: max |r| = 0.526
+       PASS  no family pair reaches the partial threshold: max |r| = 0.527
              DISCLOSED (not a fail) — levels above 0.80: V-G=0.850
              Sigma pairs, reported off-gate: S-V=+0.751  S-G=+0.757  S-T=+0.502
 
@@ -57,12 +57,12 @@ v3.0 SHIP GATES
        PASS  two independent computations produce an identical tape
 
 [PASS] Outcome layer — conditional probabilities must beat climatology
-             Brier conditional 0.2802 vs climatology 0.2496  ->  skill -0.123
-             n=4533, effective n (overlap-adjusted) = 25
+             Brier conditional 0.2802 vs climatology 0.2495  ->  skill -0.123
+             n=4534, effective n (overlap-adjusted) = 25
              p10-p90 coverage of realised forward return: 68.8% (nominal 80%)
                      (0.047, 0.22] n=  931 predicted 0.157 observed 0.469
-                     (0.22, 0.295] n=  882 predicted 0.261 observed 0.303
-                    (0.295, 0.368] n=  910 predicted 0.329 observed 0.418
+                     (0.22, 0.293] n=  883 predicted 0.261 observed 0.302
+                    (0.293, 0.368] n=  910 predicted 0.329 observed 0.418
                      (0.368, 0.48] n=  910 predicted 0.422 observed 0.270
                      (0.48, 0.892] n=  900 predicted 0.623 observed 0.212
              ACTIVATION: layer is DARK (needs skill >= 0.02)
@@ -87,7 +87,7 @@ v3.0 SHIP GATES
 
 [PASS] Growth specification — functional-form risk in pillar G
              spread median 8.8 pts, p90 18.5, max 63.9
-             correlation with the official specification: B 0.989, C 0.981, D 0.985, E 0.281
+             correlation with the official specification: B 0.989, C 0.981, D 0.985, E 0.278
              first live: A 2014-05-17, B 2014-05-17, C 2014-05-17, D 2014-05-17, E 2025-09-16
                      date      A      B      C      D      E   spread
                2017-12-17  0.994  0.999  0.991  0.994    n/a     0.8
