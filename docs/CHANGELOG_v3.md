@@ -310,6 +310,32 @@ No v3 compute exists yet. v2 remains the public gauge.
 
     Two things recorded rather than left to be found later. The **darkest blue never appears on the chart** — the tape's minimum is 0.05 and the CDF is clipped at 0.001, so no published day has been below 0.03; the stop exists for symmetry and shows only on the legend strip. And matching the gauge verbatim **reinstates a yellow-green over 0.35–0.44** (8.6% of the ramp, 6.7% of days), which decision 48 had removed. That is a deliberate trade, not an oversight: one scale across the page was judged worth more than the green-free property, and it is a one-line change to suppress if that judgement is ever reversed.
 
+51. **"Is the score lagging?" — asked after a +6 % day, answered with the arithmetic. It is not a defect; it is three designed properties stacking.** BTC rose **+5.97 %** into the 2026-09-18 close ($76,387 → $80,944) and the published score moved **31 → 33**. Decomposed:
+
+    | quantity | 09-17 | 09-18 | move |
+    |---|---|---|---|
+    | pillar V | 0.3535 | 0.4053 | +0.0518 |
+    | pillar G | 0.2683 | 0.3255 | +0.0572 |
+    | pillar T | 0.4422 | 0.5348 | **+0.0926** |
+    | pillar S | 0.2922 | 0.3295 | +0.0373 |
+    | raw blend `raw01` | 0.3319 | 0.3887 | **+0.0568** — responds in full |
+    | smoothed `smooth01` | 0.3402 | 0.3510 | +0.0108 — 22 % of it |
+    | published `risk100` | 31 | 33 | +2 |
+
+    **Every pillar responded fully.** The damping is the EMA and nothing else: predicted `smooth01` from α = 2/9 (span 8) is **0.351007** against **0.351007** committed, a difference of **1.1e-07**. Inputs were fresh — `api_vintage 2026-09-18`, `stale 0`, `input_stale_days 0`, `n_live 4`. No stale feed, no dark family, no broken map.
+
+    Three separate properties, each deliberate:
+
+    1. **The EMA passes 22 % of a move on day one.** 39 % by day 2, 53 % by day 3, 87 % by day 8. If price simply held at the new level, `smooth01` would climb 0.3510 → 0.3594 → 0.3710 → 0.3857 over the following ten days.
+    2. **The newest row is yesterday's close.** Coin Metrics publishes a day in arrears, so the run on 2026-09-19 committed the row for 2026-09-18. An intraday move is not in the number at all until the next morning; what moves intraday on the page is the labelled trend overlay, which is explicitly not risk.
+    3. **It is a percentile, not a return.** `raw01` moving +0.057 is a large one-day move in the blend; where it lands in *rank* depends on how crowded that part of the history is.
+
+    **Shortening the EMA span is a version bump, not a tweak** (rule 2: the span is part of the constitution and ships as `v3.1.jsonl`), and tuning it because a recent move felt under-reported would be retuning to taste (rule 3). Recorded here so the next person who asks gets the arithmetic rather than a re-litigation.
+
+52. **The darkest blue moved from 0.03 to 0.06, and the gauge's end labels were removed.** At 0.03 the darkest stop was decoration: the tape's minimum is 0.05, so no published day could reach it and it showed only on the legend strip. At 0.06 it covers the **6 deepest days the model has ever printed** — 2022-11-21/22 and 2022-12-30 through 2023-01-02, the 2022 bottom at $15,778–$16,689. Continuity is unchanged: largest single-channel step between adjacent 0.001 samples is still **3 of 255**.
+
+    The `0` and `1` text labels at the ends of the gauge arc are gone. They sat on top of the most saturated blue and red and were the only part of the gauge competing with the arc itself; the number under the needle already states the reading. The arc, its gradient, the needle and the number are untouched.
+
 ### Ship gates (spec §12.1) — `model/v3/validate.py` exits non-zero on any failure
 
 Full causal tape: **reach** (2013-12-04, 2017-12-17, 2021-04-14, 2021-11-10, 2024-03-13, 2025-10-06 in the top quintile of the tape up to that day) · **order** (2025-10-06 not below 2024-03-13 without a written G/Σ residual explanation) · **bottom** (2015-01-14, 2018-12-15, 2022-11-21 in the bottom quintile) · **low-vol rich** (synthetic: high V + falling κ does not lower Σ) · **collinearity** (max |r| among mapped pillars ≤ 0.80) · **nested baseline** (walk-forward Spearman of −risk vs next-90-day return, 2014 → embargo, beats Mayer percentile alone, MVRV percentile alone, 200-week-SMA distance; if MVRV alone wins, strip ornament pillars, never raise w_V above 0.40) · **rewrite probe** (compute twice, committed rows byte-stable; a v3.1 weight change does not touch `v3.0.jsonl`). Second table, holdout year only, no parameter chosen from it.

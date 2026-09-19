@@ -675,16 +675,17 @@ const V3_STOPS=[[0,[63,185,80]],[0.20,[70,179,201]],[0.60,[236,122,28]],[0.80,[2
  *
  *     risk < 0.08   intense blue    1.34% of the tape (71 days)
  *     risk > 0.92   intense red     9.36% (497 days)
- *     risk < 0.03   darkest blue    0.00% -- see below
+ *     risk < 0.06   darkest blue    0.11% (6 days)
  *     risk > 0.97   darkest red     4.54% (241 days)
  *
  * The gauge's own sequence is stretched across the 0.08-0.92 middle, so cyan
  * lands at 0.29, yellow at 0.54 and orange at 0.75.
  *
- * The darkest blue never appears on the chart. The tape's minimum is 0.05 and
- * the empirical CDF is clipped at 0.001, so no published day has ever been
- * below 0.03; that stop exists for symmetry with the red end and shows only on
- * the legend strip. Said rather than left for someone to discover.
+ * The darkest blue sits at 0.06 rather than 0.03. At 0.03 it was decoration:
+ * the tape's minimum is 0.05, so no published day could ever reach it and the
+ * stop showed only on the legend. At 0.06 it covers the 6 deepest days the
+ * model has ever printed, all in the 2022 bottom, which is what a reserved
+ * extreme is for.
  *
  * Continuity was measured, not assumed: sampling at 0.001 intervals, the
  * largest single-channel change between adjacent samples is 3 of 255. The flat
@@ -697,7 +698,7 @@ const V3_STOPS=[[0,[63,185,80]],[0.20,[70,179,201]],[0.60,[236,122,28]],[0.80,[2
  * not an oversight -- matching the gauge was judged worth more than the
  * green-free property an earlier revision had.
  */
-const V3_HEAT_STOPS=[[0,[18,40,163]],[0.03,[30,111,235]],[0.08,[30,111,235]],
+const V3_HEAT_STOPS=[[0,[18,40,163]],[0.06,[30,111,235]],[0.08,[30,111,235]],
                      [0.29,[70,179,201]],[0.538,[232,200,74]],[0.748,[236,122,28]],
                      [0.92,[214,61,46]],[0.97,[214,61,46]],[1,[125,22,32]]];
 /* `model` is explicit because the two scales coexist on one page: the gauge and

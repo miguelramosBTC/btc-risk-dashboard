@@ -50,7 +50,7 @@ Two colour ramps, because they answer different questions:
   visual language. Only the *positions* differ, because the gauge spreads its
   extremes evenly and a 15-year chart should not. The two intense ends are
   reserved: **intense blue below 0.08** (1.34% of the tape, 71 days) and
-  **intense red above 0.92** (9.36%, 497 days), with a darker blue below 0.03
+  **intense red above 0.92** (9.36%, 497 days), with a darker blue below 0.06
   and a darker red above 0.97 (4.54%). The gauge's sequence is stretched across
   the 0.08–0.92 middle, putting cyan at 0.29, yellow at 0.54, orange at 0.75.
 
@@ -59,10 +59,10 @@ Two colour ramps, because they answer different questions:
   at [0.03, 0.08] and [0.92, 0.97] are what "reserved for" means — they change
   slope, never colour, so there is no visible edge.
 
-  Two things stated rather than left to be discovered. The **darkest blue never
-  appears on the chart**: the tape's minimum is 0.05 and the CDF is clipped at
-  0.001, so no published day has been below 0.03; that stop exists for symmetry
-  with the red end and shows only on the legend. And taking the gauge's scale
+  The darkest blue sits at **0.06**, where it covers the six deepest days the
+  model has ever printed (the 2022 bottom). At 0.03 it was decoration — the
+  tape's minimum is 0.05, so nothing could ever reach it. One thing stated
+  rather than left to be discovered: taking the gauge's scale
   verbatim **brings back a yellow-green over 0.35–0.44** (6.7% of days) — the
   gauge's own cyan-to-yellow leg. That is a deliberate trade: matching the gauge
   was judged worth more than the green-free property an earlier revision had.
