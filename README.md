@@ -48,12 +48,19 @@ Two colour ramps, because they answer different questions:
   both ends and near-symmetrically: **deep marine below 0.12** (6.1% of days)
   and **intense red above 0.95** (7.2%), deepening to navy at 0.00 and to a
   dark red at 1.00. Everything between is stretched so the middle of the range
-  actually travels, and it carries **no green** — azure 0.12, teal 0.30, pale
-  blue-grey 0.46, cream 0.60, yellow 0.72, orange 0.86 — monotonic cool-to-hot,
-  so warmth still reads as extension at a glance. Removing green is not just
-  dropping a stop: teal interpolated straight to yellow passes *through* green,
-  so the path keeps blue at or above green until red takes over, pivoting
-  through a near-neutral warm grey at 0.53. Checked by hue angle, not by eye.
+  actually travels, and it carries **no green and no washed-out neutral** —
+  azure 0.12, teal 0.30, deep blue 0.44, dark plum 0.53, bronze 0.63, gold
+  0.75, orange 0.86.
+
+  Those two exclusions fight each other. A straight RGB line from a cool to a
+  warm has only two routes: keep green high and pass *through* green, or let
+  the channels converge and pass through *grey*. The ramp therefore goes round
+  the other side of the wheel — blue 225° → plum 340° → bronze 24° — which is
+  neither, and which **darkens** through the middle (value dips to 0.41)
+  instead of brightening, so the mid-scale recedes and both extremes carry the
+  eye. Verified by hue angle rather than by eye: zero samples in the green
+  band, minimum saturation 0.21 (no true grey anywhere), and the share below
+  saturation 0.30 down from 9.4% of the tape's days to 2.0%.
   Two earlier versions were wrong in the same way at opposite ends: v2's stops
   reddened 15.4% of history, and the first v3 cold end left **0.00–0.40 — 29.0%
   of all history, 1,540 days — as one flat marine blue**, so 0.05 and 0.38

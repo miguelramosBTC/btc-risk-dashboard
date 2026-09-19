@@ -703,25 +703,39 @@ const V3_STOPS=[[0,[63,185,80]],[0.20,[70,179,201]],[0.60,[236,122,28]],[0.80,[2
  *     2018-12-15  $3,185    0.170   blue-teal
  *
  * Everything between is stretched so the middle of the range actually travels,
- * and it carries NO GREEN: teal 0.30, pale blue-grey 0.46, cream 0.60, yellow
- * 0.72, orange 0.86. Monotonic cool-to-hot, so warmth still reads as extension.
+ * and it carries NO GREEN and no washed-out neutral: teal 0.30, deep blue 0.44,
+ * dark plum 0.53, bronze 0.63, gold 0.75, orange 0.86.
  *
- * Getting there is not just "delete the green stop". Interpolating teal
- * (70,179,201) straight to yellow (232,200,74) passes THROUGH green, because
- * G stays high while B falls and R has not yet overtaken. The path therefore
- * keeps B >= G until R takes over, pivoting through a near-neutral at 0.53
- * (192,204,182, saturation 0.11 -- a warm grey, not a colour). Checked by hue
- * angle rather than by eye: sampling the ramp at 1,001 points, the share
- * landing in the green band (hue 80-170 deg with saturation above 0.25) went
- * from 234 samples to ZERO, and from 17.0% of the tape's days to 0.0%.
- * Yellow-plus-orange rose from 41.4% of days to 46.3%.
+ * Two constraints that fight each other, and how the path satisfies both.
+ * Interpolating a cool to a warm in RGB has exactly two straight-line routes:
+ * keep G high and pass THROUGH green (teal -> yellow), or let all three
+ * channels converge and pass through GREY (blue -> amber). The first version
+ * took the second route and bottomed out at saturation 0.08 while the value
+ * PEAKED at 0.91 -- a pale band that read as white on a dark page.
+ *
+ * The fix is to go round the other side of the wheel: blue 225 deg -> plum
+ * 340 deg -> bronze 24 deg. That is the one route that is neither green nor
+ * grey, and it also DARKENS through the middle (value dips to 0.41) instead of
+ * brightening, so the mid-scale recedes and both extremes carry the eye --
+ * which is what the model actually says about the middle of its own range.
+ *
+ * Measured over 1,001 samples, weighted by the tape's days:
+ *   green (hue 80-170, sat > 0.25) : 0 samples, unchanged from before
+ *   saturation below 0.30          : 13.0% -> 3.5% of ramp, 9.4% -> 2.0% of days
+ *   minimum saturation anywhere    : 0.08 -> 0.21  (no true grey remains)
+ *   peak lightness in the middle   : 0.91 -> 0.84, with a 0.41 trough
+ *
+ * The plum pivot cannot be mistaken for the top red: 340 deg at saturation
+ * 0.35 and value 0.47, against red's 5 deg at 0.79 and 0.84. Zero mid-ramp
+ * samples sit in the red band with comparable saturation and lightness.
  *
  * The two ends are untouched, so their shares of the tape are exactly as
  * before: deep marine <= 0.12 is 6.09% of days, intense red >= 0.95 is 7.22%.
  */
-const V3_HEAT_STOPS=[[0,[10,45,140]],[0.12,[30,111,235]],[0.30,[70,179,201]],
-                     [0.46,[150,193,212]],[0.60,[233,214,152]],[0.72,[232,200,74]],
-                     [0.86,[236,122,28]],[0.95,[214,61,46]],[1,[140,20,26]]];
+const V3_HEAT_STOPS=[[0,[10,45,140]],[0.12,[30,111,235]],[0.30,[58,158,186]],
+                     [0.44,[40,96,148]],[0.53,[120,78,92]],[0.63,[190,128,44]],
+                     [0.75,[232,190,70]],[0.86,[236,122,28]],[0.95,[214,61,46]],
+                     [1,[140,20,26]]];
 /* `model` is explicit because the two scales coexist on one page: the gauge and
    the matrix follow the SERVING model, while the main chart follows whichever
    series it managed to load. Those can differ -- v3 gauge, v2 chart, if the

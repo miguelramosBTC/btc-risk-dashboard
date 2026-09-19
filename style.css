@@ -348,7 +348,7 @@ code{font-family:var(--mono);font-size:.85em;background:var(--card2);border:1px 
    drift out of sync with the colours it is describing; this is only the
    fallback for a page that loads the stylesheet but not the script. */
 .strip.v3{
-  background:linear-gradient(90deg,#0a2d8c 0%,#1e6feb 12%,#46b3c9 30%,#96c1d4 46%,#e9d698 60%,#e8c84a 72%,#ec7a1c 86%,#d63d2e 95%,#8c141a 100%);
+  background:linear-gradient(90deg,#0a2d8c 0%,#1e6feb 12%,#3a9eba 30%,#286094 44%,#784e5c 53%,#be802c 63%,#e8be46 75%,#ec7a1c 86%,#d63d2e 95%,#8c141a 100%);
 }
 .strip .needle{position:absolute;top:-5px;bottom:-5px;width:3px;border-radius:2px;background:#fff;box-shadow:0 0 0 2.5px rgba(10,12,18,.85)}
 .strip-lbl{display:flex;justify-content:space-between;color:var(--mut2);font-size:10.5px;font-family:var(--mono);margin-top:6px}

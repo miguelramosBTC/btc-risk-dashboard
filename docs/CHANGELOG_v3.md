@@ -274,6 +274,23 @@ No v3 compute exists yet. v2 remains the public gauge.
 
     The stops at 0, 0.12, 0.95 and 1.00 are byte-identical to before, so the extremes keep exactly the shares decision 44 set: **deep marine ≤ 0.12 is 6.09% of days, intense red ≥ 0.95 is 7.22%**. Confirmed in a browser against the live ramp: 0 of 1,001 samples and 0 of the 26 drawn buckets fall in the green band.
 
+49. **The green-free ramp had bought its way out of green with grey, and that was the wrong currency.** Decision 48 removed green by keeping blue at or above green until red overtook — which works, but the resulting path bottomed out at **saturation 0.08** while its value *peaked* at **0.91**. On a near-black page that is a pale washed-out band: white, not a colour.
+
+    The constraints are genuinely in tension, and it is worth writing down why. A straight RGB line from a cool to a warm has exactly two routes: keep G high and pass **through green**, or let all three channels converge and pass **through grey**. Decision 48 took the second. Neither is acceptable.
+
+    The resolution is a third route — round the other side of the wheel: **blue 225° → plum 340° → bronze 24°**. It is neither green nor grey, and it **darkens** through the middle rather than brightening, so the mid-scale recedes while both extremes carry the eye. That happens to match what the model says about the middle of its own range: unremarkable.
+
+    | measure | before | after |
+    |---|---|---|
+    | green samples (hue 80–170°, sat > 0.25) | 0 | **0** |
+    | saturation < 0.30 | 13.0% of ramp · 9.4% of days | **3.5% · 2.0%** |
+    | minimum saturation anywhere | **0.08** (true grey) | **0.21** |
+    | peak lightness in the middle | **0.91** | 0.84, with a 0.41 trough |
+
+    The plum pivot cannot be confused with the top red — 340° at saturation 0.35 and value 0.47, against red's 5° at 0.79 and 0.84 — and zero mid-ramp samples sit in the red band at comparable saturation and lightness. Confirmed against the live ramp in a browser: the least-saturated of the 26 buckets the heat map actually draws is now `rgb(110,80,99)`, a dark plum at saturation 0.27.
+
+    Stops at 0, 0.12, 0.95 and 1.00 remain byte-identical for the third revision running, so the extremes still hold exactly the shares decision 44 set: deep marine ≤ 0.12 is 6.09% of days, intense red ≥ 0.95 is 7.22%.
+
 ### Ship gates (spec §12.1) — `model/v3/validate.py` exits non-zero on any failure
 
 Full causal tape: **reach** (2013-12-04, 2017-12-17, 2021-04-14, 2021-11-10, 2024-03-13, 2025-10-06 in the top quintile of the tape up to that day) · **order** (2025-10-06 not below 2024-03-13 without a written G/Σ residual explanation) · **bottom** (2015-01-14, 2018-12-15, 2022-11-21 in the bottom quintile) · **low-vol rich** (synthetic: high V + falling κ does not lower Σ) · **collinearity** (max |r| among mapped pillars ≤ 0.80) · **nested baseline** (walk-forward Spearman of −risk vs next-90-day return, 2014 → embargo, beats Mayer percentile alone, MVRV percentile alone, 200-week-SMA distance; if MVRV alone wins, strip ornament pillars, never raise w_V above 0.40) · **rewrite probe** (compute twice, committed rows byte-stable; a v3.1 weight change does not touch `v3.0.jsonl`). Second table, holdout year only, no parameter chosen from it.
